@@ -2,7 +2,11 @@
 
 set -eu
 
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+case $0 in
+    */*) script_dir=${0%/*} ;;
+    *) script_dir=. ;;
+esac
+ROOT=$(CDPATH= cd -- "$script_dir/.." && pwd)
 required_go=
 
 while read -r directive version _; do

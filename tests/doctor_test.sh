@@ -2,8 +2,16 @@
 
 set -eu
 
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-MAKE_BIN=${MAKE:-$(command -v make)}
+case $0 in
+    */*) script_dir=${0%/*} ;;
+    *) script_dir=. ;;
+esac
+ROOT=$(CDPATH= cd -- "$script_dir/.." && pwd)
+MAKE_BIN=${MAKE:-make}
+case $MAKE_BIN in
+    */*) ;;
+    *) MAKE_BIN=$(command -v "$MAKE_BIN") ;;
+esac
 FIXTURES=$(mktemp -d)
 failures=0
 
@@ -15,10 +23,6 @@ create_fake_tool() {
     version_output=$3
 
     mkdir -p "$tool_dir"
-    if [ ! -x "$tool_dir/sh" ]; then
-        ln -s "$(command -v sh)" "$tool_dir/sh"
-        ln -s "$(command -v dirname)" "$tool_dir/dirname"
-    fi
     cat >"$tool_dir/$tool_name" <<EOF
 #!/bin/sh
 printf '%s\n' '$version_output'
