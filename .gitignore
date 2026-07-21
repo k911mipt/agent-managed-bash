@@ -1,0 +1,15 @@
+# Local runtime state
+/.managed_bash/
+
+# Dependencies
+/node_modules/
+/plugins/*/node_modules/
+
+# Build and coverage outputs
+/bin/
+/dist/
+/coverage/
+/plugins/*/dist/
+/plugins/*/coverage/
+*.test
+/coverage.out
