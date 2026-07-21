@@ -24,7 +24,7 @@ if ! command -v go >/dev/null 2>&1; then
     exit 1
 fi
 
-if ! go_output=$(go version 2>&1); then
+if ! go_output=$(GOTOOLCHAIN=local go version 2>&1); then
     printf '%s\n' "doctor: Go $required_go is required, but 'go version' failed: $go_output; reinstall Go $required_go" >&2
     exit 1
 fi
