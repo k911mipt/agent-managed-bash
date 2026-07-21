@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "capture_limit_bytes": 104857600,
+  "defaults": {
+    "wait_timeout_ms": 300000,
+    "idle_checkpoint_ms": 120000,
+    "hard_timeout_ms": 7200000,
+    "capture_limit_bytes": 104857600
+  },
+  "observer": {
+    "default_cursor_bytes": 0,
+    "wait_omitted_cursor": "persisted_or_default",
+    "wait_success": "advance_to_next_cursor_after_response",
+    "other_actions": "no_advance"
+  },
+  "exit_classes": {
+    "success": 0,
+    "validation": 2,
+    "authorization": 3,
+    "conflict": 4,
+    "internal": 5
+  },
+  "error_exit_classes": {
+    "malformed_json": 2,
+    "invalid_request": 2,
+    "incompatible_version": 2,
+    "invalid_range": 2,
+    "invalid_cursor": 2,
+    "job_not_found": 3,
+    "unauthorized": 3,
+    "active_job": 4,
+    "conflict": 4,
+    "corrupt_state": 5,
+    "runner_unavailable": 5,
+    "io_failure": 5,
+    "internal": 5
+  },
+  "code_error_mapping": {
+    "allow": null,
+    "cancellation_requested": null,
+    "cancellation_idempotent": null,
+    "cancellation_terminal": null,
+    "transition_not_allowed": "conflict",
+    "invalid_status": "corrupt_state",
+    "corrupt_state": "corrupt_state",
+    "job_not_found": "job_not_found",
+    "unauthorized": "unauthorized",
+    "active_job": "active_job",
+    "invalid_cursor": "invalid_cursor",
+    "invalid_range": "invalid_range",
+    "path_invalid": "invalid_request",
+    "path_outside_workspace": "unauthorized",
+    "path_symlink": "unauthorized",
+    "path_unavailable": "io_failure"
+  },
+  "statuses": [
+    "running", "succeeded", "nonzero_exit", "signal_exit", "cancelled",
+    "hard_timeout", "output_limit", "runner_lost"
+  ],
+  "terminal_statuses": [
+    "succeeded", "nonzero_exit", "signal_exit", "cancelled",
+    "hard_timeout", "output_limit", "runner_lost"
+  ],
+  "transitions": [
+    { "from": "running", "to": "succeeded" },
+    { "from": "running", "to": "nonzero_exit" },
+    { "from": "running", "to": "signal_exit" },
+    { "from": "running", "to": "cancelled" },
+    { "from": "running", "to": "hard_timeout" },
+    { "from": "running", "to": "output_limit" },
+    { "from": "running", "to": "runner_lost" }
+  ],
+  "access": {
+    "same_workspace_read": "allow",
+    "cross_workspace_read": "job_not_found",
+    "owner_mutation": "allow",
+    "non_owner_mutation": "unauthorized",
+    "cross_workspace_mutation": "job_not_found"
+  },
+  "removal": {
+    "active_status": "running",
+    "active_code": "active_job",
+    "terminal_code": "allow"
+  },
+  "cancellation": {
+    "initial_code": "cancellation_requested",
+    "repeated_code": "cancellation_idempotent",
+    "terminal_code": "cancellation_terminal"
+  },
+  "cursor": {
+    "invalid_cursor_code": "invalid_cursor",
+    "invalid_range_code": "invalid_range"
+  },
+  "path": {
+    "invalid_code": "path_invalid",
+    "outside_code": "path_outside_workspace",
+    "symlink_code": "path_symlink",
+    "unavailable_code": "path_unavailable"
+  },
+  "lifecycle": {
+    "ttl_enabled": false,
+    "restart_reattachment": false
+  }
+}

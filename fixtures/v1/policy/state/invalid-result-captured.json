@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "session": { "schema_version": 1, "session_id": "session-1", "workspace_path": "/workspace", "created_at_unix_ms": 900 },
+  "job": {
+    "job_id": "job-1", "status": "succeeded", "owner_session_id": "session-1",
+    "workspace_path": "/workspace", "cwd": "/workspace", "command": "printf ok",
+    "created_at_unix_ms": 1000, "started_at_unix_ms": 1001, "finished_at_unix_ms": 1010,
+    "captured_bytes": 2, "hard_timeout_ms": 60000, "output_limit_bytes": 10
+  },
+  "result": { "status": "succeeded", "finished_at_unix_ms": 1010, "captured_bytes": 1, "exit_code": 0 },
+  "observers": []
+}
