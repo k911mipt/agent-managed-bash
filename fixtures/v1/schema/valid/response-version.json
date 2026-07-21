@@ -1,0 +1,7 @@
+{
+  "schema_version": 1, "ok": true, "action": "version",
+  "result": {
+    "product": "managed-bash", "binary_version": "0.1.0", "protocol_version": 1,
+    "os": "linux", "architecture": "amd64"
+  }
+}

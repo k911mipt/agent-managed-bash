@@ -1,0 +1,4 @@
+{
+  "schema_version": 1, "ok": false, "action": "cancel",
+  "error": { "code": "unauthorized", "message": "session cannot mutate this job" }
+}

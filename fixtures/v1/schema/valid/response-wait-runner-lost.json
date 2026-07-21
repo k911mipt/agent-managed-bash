@@ -1,0 +1,18 @@
+{
+  "schema_version": 1, "ok": true, "action": "wait",
+  "result": {
+    "observation": {
+      "job": {
+        "job_id": "job-1", "status": "runner_lost", "owner_session_id": "session-1",
+        "workspace_path": "/workspace", "cwd": "/workspace", "command": "sleep 30",
+        "created_at_unix_ms": 1000, "started_at_unix_ms": 1001, "finished_at_unix_ms": 2000,
+        "captured_bytes": 0, "hard_timeout_ms": 60000, "output_limit_bytes": 104857600
+      },
+      "process_result": {
+        "status": "runner_lost", "finished_at_unix_ms": 2000, "captured_bytes": 0,
+        "diagnostic": "runner liveness lock disappeared"
+      }
+    },
+    "output": { "text": "", "start_cursor_bytes": 0, "next_cursor_bytes": 0, "captured_bytes": 0, "eof": true }
+  }
+}

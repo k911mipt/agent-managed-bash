@@ -1,0 +1,4 @@
+{
+  "schema_version": 1, "ok": false, "action": "status",
+  "error": { "code": "corrupt_state", "message": "persisted state is corrupt" }
+}

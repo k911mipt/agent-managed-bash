@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "action": "cancel",
+  "context": { "session_id": "session-1", "workspace_path": "/workspace", "cwd": "/workspace" },
+  "payload": { "job_id": "job-1" }
+}
