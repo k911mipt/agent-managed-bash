@@ -1,0 +1,15 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "agent-managed-bash",
+    },
+    "plugins/opencode": {
+      "name": "@agent-managed-bash/opencode",
+    },
+  },
+  "packages": {
+    "@agent-managed-bash/opencode": ["@agent-managed-bash/opencode@workspace:plugins/opencode"],
+  }
+}
