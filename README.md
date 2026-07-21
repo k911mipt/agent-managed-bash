@@ -2,7 +2,11 @@
 
 Observable, cancellable long-running shell jobs for coding agents.
 
-> Status: repository bootstrap only. The job runner and integrations are not implemented yet.
+> Status: protocol v1 schemas, generated DTOs, and semantic state policy are implemented. The job runner and integrations are not implemented yet.
+
+The v1 CLI contract permits a bounded one-shot read of the full captured prefix, up to 100 MiB. Capture appends retain only the accepted incoming prefix so repeated writes do not copy the full history.
+
+The OpenCode plugin's 200-line presentation tail is intentionally deferred to issue #6; issue #3 defines only the shared protocol, persistence, and policy contracts it consumes.
 
 ## Prerequisites
 
@@ -26,11 +30,18 @@ bun install --frozen-lockfile
 | Command | Purpose |
 |---------|---------|
 | `make doctor` | Check that the installed Go and Bun versions match the repository pins. |
+| `make schema-generate` | Regenerate the checked-in Go and TypeScript schema DTOs. |
+| `make schema-generated-check` | Prove two independent generations are byte-identical and match the checked-in DTOs. |
+| `make protocol-schema-test` | Run Go and Ajv draft-2020-12 validation over the shared fixture manifest. |
+| `make generated-model-compile` | Compile focused Go and strict TypeScript consumers of the generated DTOs. |
+| `make state-schema-test` | Validate immutable policy data and run semantic state-policy conformance tests. |
+| `make schema-check` | Run reproducibility, protocol fixtures, generated-model compilation, and state policy. |
 
 Run the doctor failure contract with:
 
 ```sh
 sh tests/doctor_test.sh
+sh tests/schema_generation_test.sh
 ```
 
 ## Repository layout
