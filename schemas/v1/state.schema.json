@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-managed-bash.dev/schema/v1/state.schema.json",
+  "title": "PersistedJobState",
+  "$ref": "models.schema.json#/$defs/persistedJobState"
+}

@@ -1,0 +1,100 @@
+{
+  "transitions": [
+    { "name": "running to succeeded", "from": "running", "to": "succeeded", "allowed": true, "code": "allow" },
+    { "name": "running to nonzero exit", "from": "running", "to": "nonzero_exit", "allowed": true, "code": "allow" },
+    { "name": "running to signal exit", "from": "running", "to": "signal_exit", "allowed": true, "code": "allow" },
+    { "name": "running to cancelled", "from": "running", "to": "cancelled", "allowed": true, "code": "allow" },
+    { "name": "running to hard timeout", "from": "running", "to": "hard_timeout", "allowed": true, "code": "allow" },
+    { "name": "running to output limit", "from": "running", "to": "output_limit", "allowed": true, "code": "allow" },
+    { "name": "running to runner lost", "from": "running", "to": "runner_lost", "allowed": true, "code": "allow" }
+  ],
+  "authorization": [
+    { "name": "same workspace read", "operation": "read", "same_workspace": true, "owner": false, "allowed": true, "code": "allow" },
+    { "name": "cross workspace read is masked", "operation": "read", "same_workspace": false, "owner": false, "allowed": false, "code": "job_not_found" },
+    { "name": "owner mutation", "operation": "mutate", "same_workspace": true, "owner": true, "allowed": true, "code": "allow" },
+    { "name": "non-owner mutation", "operation": "mutate", "same_workspace": true, "owner": false, "allowed": false, "code": "unauthorized" },
+    { "name": "cross workspace mutation is masked", "operation": "mutate", "same_workspace": false, "owner": true, "allowed": false, "code": "job_not_found" }
+  ],
+  "removal": [
+    { "name": "active removal rejected", "status": "running", "allowed": false, "code": "active_job" },
+    { "name": "terminal removal allowed", "status": "succeeded", "allowed": true, "code": "allow" },
+    { "name": "unknown-status removal rejected", "status": "paused", "allowed": false, "code": "invalid_status" }
+  ],
+  "cancellation": [
+    { "name": "first active cancellation", "status": "running", "already_requested": false, "allowed": true, "code": "cancellation_requested", "persist_request": true },
+    { "name": "repeated active cancellation", "status": "running", "already_requested": true, "allowed": true, "code": "cancellation_idempotent", "persist_request": false },
+    { "name": "terminal cancellation reports state", "status": "succeeded", "already_requested": false, "allowed": true, "code": "cancellation_terminal", "persist_request": false },
+    { "name": "repeated terminal cancellation", "status": "succeeded", "already_requested": true, "allowed": true, "code": "cancellation_idempotent", "persist_request": false },
+    { "name": "nonzero exit cancellation reports state", "status": "nonzero_exit", "already_requested": false, "allowed": true, "code": "cancellation_terminal", "persist_request": false },
+    { "name": "signal exit cancellation reports state", "status": "signal_exit", "already_requested": false, "allowed": true, "code": "cancellation_terminal", "persist_request": false },
+    { "name": "cancelled cancellation reports state", "status": "cancelled", "already_requested": false, "allowed": true, "code": "cancellation_terminal", "persist_request": false },
+    { "name": "hard timeout cancellation reports state", "status": "hard_timeout", "already_requested": false, "allowed": true, "code": "cancellation_terminal", "persist_request": false },
+    { "name": "output limit cancellation reports state", "status": "output_limit", "already_requested": false, "allowed": true, "code": "cancellation_terminal", "persist_request": false },
+    { "name": "runner lost cancellation reports state", "status": "runner_lost", "already_requested": false, "allowed": true, "code": "cancellation_terminal", "persist_request": false },
+    { "name": "unknown-status cancellation rejected", "status": "paused", "already_requested": false, "allowed": false, "code": "invalid_status", "persist_request": false }
+  ],
+  "cursors": [
+    { "name": "cursor at start", "cursor": 0, "captured": 10, "allowed": true, "code": "allow" },
+    { "name": "cursor at captured boundary", "cursor": 10, "captured": 10, "allowed": true, "code": "allow" },
+    { "name": "negative cursor", "cursor": -1, "captured": 10, "allowed": false, "code": "invalid_cursor" },
+    { "name": "cursor beyond captured", "cursor": 11, "captured": 10, "allowed": false, "code": "invalid_cursor" },
+    { "name": "negative captured state", "cursor": 0, "captured": -1, "allowed": false, "code": "corrupt_state" },
+    { "name": "captured beyond policy limit", "cursor": 0, "captured": 104857601, "allowed": false, "code": "corrupt_state" }
+  ],
+  "ranges": [
+    { "name": "full valid range", "start": 0, "end": 10, "captured": 10, "allowed": true, "code": "allow" },
+    { "name": "empty valid range", "start": 10, "end": 10, "captured": 10, "allowed": true, "code": "allow" },
+    { "name": "negative range start", "start": -1, "end": 1, "captured": 10, "allowed": false, "code": "invalid_range" },
+    { "name": "range end before start", "start": 5, "end": 4, "captured": 10, "allowed": false, "code": "invalid_range" },
+    { "name": "range beyond captured", "start": 0, "end": 11, "captured": 10, "allowed": false, "code": "invalid_range" },
+    { "name": "negative captured range state", "start": 0, "end": 0, "captured": -1, "allowed": false, "code": "corrupt_state" },
+    { "name": "range over capture limit", "start": 0, "end": 1, "captured": 104857601, "allowed": false, "code": "corrupt_state" }
+  ],
+  "capture": [
+    { "name": "ordinary capture", "captured": 2, "incoming": 3, "accepted": 3 },
+    { "name": "exact 100 MiB prefix", "captured": 104857598, "incoming": 5, "accepted": 2 },
+    { "name": "full capture rejects suffix", "captured": 104857600, "incoming": 5, "accepted": 0 }
+  ],
+  "output": [
+    { "name": "invalid UTF-8 replacement keeps raw cursors", "raw_hex": "41ff42", "start": 0, "end": 3, "captured": 3, "terminal": true, "text": "A�B", "next": 3, "eof": true }
+  ],
+  "output_ranges": [
+    { "name": "omitted bounds resolve to captured prefix", "captured": 10, "resolved_start": 0, "resolved_end": 10, "allowed": true, "code": "allow" },
+    { "name": "start only resolves through captured boundary", "start": 3, "captured": 10, "resolved_start": 3, "resolved_end": 10, "allowed": true, "code": "allow" },
+    { "name": "end only resolves from zero", "end": 7, "captured": 10, "resolved_start": 0, "resolved_end": 7, "allowed": true, "code": "allow" },
+    { "name": "explicit bounds remain explicit", "start": 3, "end": 7, "captured": 10, "resolved_start": 3, "resolved_end": 7, "allowed": true, "code": "allow" },
+    { "name": "invalid caller bound remains invalid range", "end": 11, "captured": 10, "resolved_start": 0, "resolved_end": 11, "allowed": false, "code": "invalid_range" },
+    { "name": "invalid captured state remains corrupt", "captured": -1, "resolved_start": 0, "resolved_end": -1, "allowed": false, "code": "corrupt_state" }
+  ],
+  "observers": [
+    { "name": "new observer defaults to zero", "action": "wait", "resolved_cursor": 0, "next_cursor": 2, "advanced_cursor": 2, "should_advance": true },
+    { "name": "wait without cursor uses persisted observer", "action": "wait", "persisted_cursor": 3, "resolved_cursor": 3, "next_cursor": 5, "advanced_cursor": 5, "should_advance": true },
+    { "name": "explicit wait cursor overrides persisted observer", "action": "wait", "explicit_cursor": 1, "persisted_cursor": 3, "resolved_cursor": 1, "next_cursor": 2, "advanced_cursor": 2, "should_advance": true },
+    { "name": "output does not advance observer", "action": "output", "persisted_cursor": 3, "resolved_cursor": 3, "next_cursor": 5, "advanced_cursor": 3, "should_advance": false },
+    { "name": "status does not advance observer", "action": "status", "persisted_cursor": 3, "resolved_cursor": 3, "next_cursor": 5, "advanced_cursor": 3, "should_advance": false },
+    { "name": "list does not advance observer", "action": "list", "persisted_cursor": 3, "resolved_cursor": 3, "next_cursor": 5, "advanced_cursor": 3, "should_advance": false }
+  ],
+  "paths": [
+    { "name": "regular file", "kind": "regular", "allowed": true, "code": "allow" },
+    { "name": "workspace root is not a regular file", "kind": "workspace_root", "allowed": false, "code": "path_unavailable" },
+    { "name": "outside workspace", "kind": "outside", "allowed": false, "code": "path_outside_workspace" },
+    { "name": "traversal spelling", "kind": "traversal", "allowed": false, "code": "path_invalid" },
+    { "name": "relative path", "kind": "relative", "allowed": false, "code": "path_invalid" },
+    { "name": "symlink file", "kind": "symlink_file", "allowed": false, "code": "path_symlink" },
+    { "name": "symlink directory component", "kind": "symlink_directory", "allowed": false, "code": "path_symlink" },
+    { "name": "symlink workspace root", "kind": "symlink_workspace", "allowed": false, "code": "path_symlink" },
+    { "name": "missing path", "kind": "missing", "allowed": false, "code": "path_unavailable" }
+  ],
+  "state_validation": [
+    { "name": "consistent running state", "path": "valid-running.json", "allowed": true, "code": "allow" },
+    { "name": "consistent terminal state", "path": "valid-succeeded.json", "allowed": true, "code": "allow" },
+    { "name": "observer beyond captured bytes", "path": "invalid-observer-cursor.json", "allowed": false, "code": "corrupt_state" },
+    { "name": "capture beyond per-job limit", "path": "invalid-capture-limit.json", "allowed": false, "code": "corrupt_state" },
+    { "name": "result captured bytes mismatch", "path": "invalid-result-captured.json", "allowed": false, "code": "corrupt_state" },
+    { "name": "result finish time mismatch", "path": "invalid-result-finished.json", "allowed": false, "code": "corrupt_state" },
+    { "name": "invalid schema version", "path": "invalid-schema-version.json", "allowed": false, "code": "corrupt_state" },
+    { "name": "stale start timestamp", "path": "invalid-started-before-created.json", "allowed": false, "code": "corrupt_state" },
+    { "name": "duplicate observer session", "path": "invalid-duplicate-observer.json", "allowed": false, "code": "corrupt_state" },
+    { "name": "cwd outside workspace", "path": "invalid-cwd-outside.json", "allowed": false, "code": "corrupt_state" }
+  ]
+}

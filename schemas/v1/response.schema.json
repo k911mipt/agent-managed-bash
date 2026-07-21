@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-managed-bash.dev/schema/v1/response.schema.json",
+  "title": "Response",
+  "oneOf": [
+    { "$ref": "#/$defs/runResponse" },
+    { "$ref": "#/$defs/waitResponse" },
+    { "$ref": "#/$defs/statusResponse" },
+    { "$ref": "#/$defs/outputResponse" },
+    { "$ref": "#/$defs/cancelResponse" },
+    { "$ref": "#/$defs/removeResponse" },
+    { "$ref": "#/$defs/listResponse" },
+    { "$ref": "#/$defs/versionResponse" },
+    { "$ref": "#/$defs/errorResponse" }
+  ],
+  "$defs": {
+    "runResponse": {
+      "title": "RunResponse", "type": "object", "additionalProperties": false,
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 }, "ok": { "type": "boolean", "const": true },
+        "action": { "type": "string", "const": "run" }, "result": { "$ref": "models.schema.json#/$defs/jobMetadata" }
+      },
+      "required": ["schema_version", "ok", "action", "result"]
+    },
+    "waitResponse": {
+      "title": "WaitResponse", "type": "object", "additionalProperties": false,
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 }, "ok": { "type": "boolean", "const": true },
+        "action": { "type": "string", "const": "wait" }, "result": { "$ref": "models.schema.json#/$defs/outputObservation" }
+      },
+      "required": ["schema_version", "ok", "action", "result"]
+    },
+    "statusResponse": {
+      "title": "StatusResponse", "type": "object", "additionalProperties": false,
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 }, "ok": { "type": "boolean", "const": true },
+        "action": { "type": "string", "const": "status" }, "result": { "$ref": "models.schema.json#/$defs/jobObservation" }
+      },
+      "required": ["schema_version", "ok", "action", "result"]
+    },
+    "outputResponse": {
+      "title": "OutputResponse", "type": "object", "additionalProperties": false,
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 }, "ok": { "type": "boolean", "const": true },
+        "action": { "type": "string", "const": "output" }, "result": { "$ref": "models.schema.json#/$defs/outputObservation" }
+      },
+      "required": ["schema_version", "ok", "action", "result"]
+    },
+    "cancelResponse": {
+      "title": "CancelResponse", "type": "object", "additionalProperties": false,
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 }, "ok": { "type": "boolean", "const": true },
+        "action": { "type": "string", "const": "cancel" }, "result": { "$ref": "models.schema.json#/$defs/cancellationResult" }
+      },
+      "required": ["schema_version", "ok", "action", "result"]
+    },
+    "removeResponse": {
+      "title": "RemoveResponse", "type": "object", "additionalProperties": false,
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 }, "ok": { "type": "boolean", "const": true },
+        "action": { "type": "string", "const": "remove" }, "result": { "$ref": "models.schema.json#/$defs/removeResult" }
+      },
+      "required": ["schema_version", "ok", "action", "result"]
+    },
+    "listResponse": {
+      "title": "ListResponse", "type": "object", "additionalProperties": false,
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 }, "ok": { "type": "boolean", "const": true },
+        "action": { "type": "string", "const": "list" }, "result": { "$ref": "models.schema.json#/$defs/listResult" }
+      },
+      "required": ["schema_version", "ok", "action", "result"]
+    },
+    "versionResponse": {
+      "title": "VersionResponse", "type": "object", "additionalProperties": false,
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 }, "ok": { "type": "boolean", "const": true },
+        "action": { "type": "string", "const": "version" }, "result": { "$ref": "models.schema.json#/$defs/versionData" }
+      },
+      "required": ["schema_version", "ok", "action", "result"]
+    },
+    "errorResponse": {
+      "title": "ErrorResponse", "type": "object", "additionalProperties": false,
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 }, "ok": { "type": "boolean", "const": false },
+        "action": { "$ref": "models.schema.json#/$defs/action" }, "error": { "$ref": "models.schema.json#/$defs/protocolError" }
+      },
+      "required": ["schema_version", "ok", "error"]
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "schema_version": 1, "ok": true, "action": "output",
+  "result": {
+    "observation": {
+      "job": {
+        "job_id": "job-1", "status": "succeeded", "owner_session_id": "session-1",
+        "workspace_path": "/workspace", "cwd": "/workspace", "command": "printf x",
+        "created_at_unix_ms": 1000, "started_at_unix_ms": 1001, "finished_at_unix_ms": 1010,
+        "captured_bytes": 1, "hard_timeout_ms": 60000, "output_limit_bytes": 104857600
+      },
+      "process_result": { "status": "succeeded", "finished_at_unix_ms": 1010, "captured_bytes": 1, "exit_code": 0 }
+    },
+    "output": { "text": "�", "start_cursor_bytes": 0, "next_cursor_bytes": 1, "captured_bytes": 1, "eof": true }
+  }
+}

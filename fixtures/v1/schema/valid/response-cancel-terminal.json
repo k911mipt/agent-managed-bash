@@ -1,0 +1,6 @@
+{
+  "schema_version": 1, "ok": true, "action": "cancel",
+  "result": {
+    "job_id": "job-1", "status": "succeeded", "outcome": "already_terminal"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "schema_version": 1, "ok": false, "action": "run",
+  "error": {
+    "code": "invalid_request", "message": "request is invalid",
+    "details": { "field": "payload.command", "reason": "required" }
+  }
+}

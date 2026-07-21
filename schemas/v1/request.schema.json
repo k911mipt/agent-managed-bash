@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-managed-bash.dev/schema/v1/request.schema.json",
+  "title": "Request",
+  "oneOf": [
+    { "$ref": "#/$defs/runRequest" },
+    { "$ref": "#/$defs/waitRequest" },
+    { "$ref": "#/$defs/statusRequest" },
+    { "$ref": "#/$defs/outputRequest" },
+    { "$ref": "#/$defs/cancelRequest" },
+    { "$ref": "#/$defs/removeRequest" },
+    { "$ref": "#/$defs/listRequest" },
+    { "$ref": "#/$defs/versionRequest" }
+  ],
+  "$defs": {
+    "runRequest": {
+      "title": "RunRequest", "type": "object", "additionalProperties": false,
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 }, "action": { "type": "string", "const": "run" },
+        "context": { "$ref": "models.schema.json#/$defs/trustedContext" },
+        "payload": { "$ref": "models.schema.json#/$defs/runPayload" }
+      },
+      "required": ["schema_version", "action", "context", "payload"]
+    },
+    "waitRequest": {
+      "title": "WaitRequest", "type": "object", "additionalProperties": false,
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 }, "action": { "type": "string", "const": "wait" },
+        "context": { "$ref": "models.schema.json#/$defs/trustedContext" },
+        "payload": { "$ref": "models.schema.json#/$defs/waitPayload" }
+      },
+      "required": ["schema_version", "action", "context", "payload"]
+    },
+    "statusRequest": {
+      "title": "StatusRequest", "type": "object", "additionalProperties": false,
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 }, "action": { "type": "string", "const": "status" },
+        "context": { "$ref": "models.schema.json#/$defs/trustedContext" },
+        "payload": { "$ref": "models.schema.json#/$defs/jobReference" }
+      },
+      "required": ["schema_version", "action", "context", "payload"]
+    },
+    "outputRequest": {
+      "title": "OutputRequest", "type": "object", "additionalProperties": false,
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 }, "action": { "type": "string", "const": "output" },
+        "context": { "$ref": "models.schema.json#/$defs/trustedContext" },
+        "payload": { "$ref": "models.schema.json#/$defs/outputPayload" }
+      },
+      "required": ["schema_version", "action", "context", "payload"]
+    },
+    "cancelRequest": {
+      "title": "CancelRequest", "type": "object", "additionalProperties": false,
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 }, "action": { "type": "string", "const": "cancel" },
+        "context": { "$ref": "models.schema.json#/$defs/trustedContext" },
+        "payload": { "$ref": "models.schema.json#/$defs/jobReference" }
+      },
+      "required": ["schema_version", "action", "context", "payload"]
+    },
+    "removeRequest": {
+      "title": "RemoveRequest", "type": "object", "additionalProperties": false,
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 }, "action": { "type": "string", "const": "remove" },
+        "context": { "$ref": "models.schema.json#/$defs/trustedContext" },
+        "payload": { "$ref": "models.schema.json#/$defs/jobReference" }
+      },
+      "required": ["schema_version", "action", "context", "payload"]
+    },
+    "listRequest": {
+      "title": "ListRequest", "type": "object", "additionalProperties": false,
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 }, "action": { "type": "string", "const": "list" },
+        "context": { "$ref": "models.schema.json#/$defs/trustedContext" }
+      },
+      "required": ["schema_version", "action", "context"]
+    },
+    "versionRequest": {
+      "title": "VersionRequest", "type": "object", "additionalProperties": false,
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 }, "action": { "type": "string", "const": "version" }
+      },
+      "required": ["schema_version", "action"]
+    }
+  }
+}

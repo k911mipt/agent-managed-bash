@@ -1,4 +1,7 @@
 {
   "name": "@agent-managed-bash/opencode",
-  "private": true
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit --project tsconfig.json"
+  }
 }

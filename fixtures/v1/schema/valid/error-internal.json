@@ -1,0 +1,4 @@
+{
+  "schema_version": 1, "ok": false,
+  "error": { "code": "internal", "message": "internal failure" }
+}

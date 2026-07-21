@@ -1,0 +1,5 @@
+{
+  "schema_version": 1, "action": "output",
+  "context": { "session_id": "session-1", "workspace_path": "/workspace", "cwd": "/workspace" },
+  "payload": { "job_id": "job-1", "start_cursor_bytes": 0, "end_cursor_bytes": -1 }
+}

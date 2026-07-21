@@ -1,0 +1,7 @@
+{
+  "schema_version": 1, "ok": true, "action": "cancel",
+  "result": {
+    "job_id": "job-1", "status": "succeeded", "outcome": "requested",
+    "cancellation": { "requested": true, "requested_at_unix_ms": 1005, "requested_by_session_id": "session-1" }
+  }
+}

@@ -1,0 +1,215 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-managed-bash.dev/schema/v1/policy.schema.json",
+  "title": "StatePolicy",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "capture_limit_bytes": { "type": "integer", "const": 104857600 },
+    "defaults": { "$ref": "#/$defs/defaultRules" },
+    "observer": { "$ref": "#/$defs/observerRules" },
+    "exit_classes": { "$ref": "#/$defs/exitClasses" },
+    "error_exit_classes": { "$ref": "#/$defs/errorExitClasses" },
+    "code_error_mapping": { "$ref": "#/$defs/codeErrorMapping" },
+    "statuses": {
+      "type": "array", "minItems": 8, "maxItems": 8,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/status" }
+    },
+    "terminal_statuses": {
+      "type": "array", "minItems": 7, "maxItems": 7,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/terminalStatus" }
+    },
+    "transitions": {
+      "type": "array", "minItems": 7, "maxItems": 7,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/transition" }
+    },
+    "access": { "$ref": "#/$defs/accessRules" },
+    "removal": { "$ref": "#/$defs/removalRules" },
+    "cancellation": { "$ref": "#/$defs/cancellationRules" },
+    "cursor": { "$ref": "#/$defs/cursorRules" },
+    "path": { "$ref": "#/$defs/pathRules" },
+    "lifecycle": { "$ref": "#/$defs/lifecycleRules" }
+  },
+  "required": [
+    "schema_version", "capture_limit_bytes", "defaults", "observer",
+    "exit_classes", "error_exit_classes", "code_error_mapping",
+    "statuses", "terminal_statuses", "transitions",
+    "access", "removal", "cancellation", "cursor", "path", "lifecycle"
+  ],
+  "$defs": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "running", "succeeded", "nonzero_exit", "signal_exit", "cancelled",
+        "hard_timeout", "output_limit", "runner_lost"
+      ]
+    },
+    "terminalStatus": {
+      "type": "string",
+      "enum": [
+        "succeeded", "nonzero_exit", "signal_exit", "cancelled",
+        "hard_timeout", "output_limit", "runner_lost"
+      ]
+    },
+    "code": {
+      "type": "string",
+      "enum": [
+        "allow", "transition_not_allowed", "invalid_status", "job_not_found", "unauthorized",
+        "active_job", "cancellation_requested", "cancellation_idempotent", "cancellation_terminal",
+        "invalid_cursor", "invalid_range", "path_invalid", "path_outside_workspace",
+        "path_symlink", "path_unavailable", "corrupt_state"
+      ]
+    },
+    "defaultRules": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "wait_timeout_ms": { "type": "integer", "const": 300000 },
+        "idle_checkpoint_ms": { "type": "integer", "const": 120000 },
+        "hard_timeout_ms": { "type": "integer", "const": 7200000 },
+        "capture_limit_bytes": { "type": "integer", "const": 104857600 }
+      },
+      "required": ["wait_timeout_ms", "idle_checkpoint_ms", "hard_timeout_ms", "capture_limit_bytes"]
+    },
+    "observerRules": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "default_cursor_bytes": { "type": "integer", "const": 0 },
+        "wait_omitted_cursor": { "type": "string", "const": "persisted_or_default" },
+        "wait_success": { "type": "string", "const": "advance_to_next_cursor_after_response" },
+        "other_actions": { "type": "string", "const": "no_advance" }
+      },
+      "required": ["default_cursor_bytes", "wait_omitted_cursor", "wait_success", "other_actions"]
+    },
+    "exitClasses": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "success": { "type": "integer", "const": 0 },
+        "validation": { "type": "integer", "const": 2 },
+        "authorization": { "type": "integer", "const": 3 },
+        "conflict": { "type": "integer", "const": 4 },
+        "internal": { "type": "integer", "const": 5 }
+      },
+      "required": ["success", "validation", "authorization", "conflict", "internal"]
+    },
+    "errorExitClasses": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "malformed_json": { "type": "integer", "const": 2 },
+        "invalid_request": { "type": "integer", "const": 2 },
+        "incompatible_version": { "type": "integer", "const": 2 },
+        "invalid_range": { "type": "integer", "const": 2 },
+        "invalid_cursor": { "type": "integer", "const": 2 },
+        "job_not_found": { "type": "integer", "const": 3 },
+        "unauthorized": { "type": "integer", "const": 3 },
+        "active_job": { "type": "integer", "const": 4 },
+        "conflict": { "type": "integer", "const": 4 },
+        "corrupt_state": { "type": "integer", "const": 5 },
+        "runner_unavailable": { "type": "integer", "const": 5 },
+        "io_failure": { "type": "integer", "const": 5 },
+        "internal": { "type": "integer", "const": 5 }
+      },
+      "required": [
+        "malformed_json", "invalid_request", "incompatible_version", "invalid_range", "invalid_cursor",
+        "job_not_found", "unauthorized", "active_job", "conflict", "corrupt_state",
+        "runner_unavailable", "io_failure", "internal"
+      ]
+    },
+    "codeErrorMapping": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "allow": { "type": "null" },
+        "cancellation_requested": { "type": "null" },
+        "cancellation_idempotent": { "type": "null" },
+        "cancellation_terminal": { "type": "null" },
+        "transition_not_allowed": { "type": "string", "const": "conflict" },
+        "invalid_status": { "type": "string", "const": "corrupt_state" },
+        "corrupt_state": { "type": "string", "const": "corrupt_state" },
+        "job_not_found": { "type": "string", "const": "job_not_found" },
+        "unauthorized": { "type": "string", "const": "unauthorized" },
+        "active_job": { "type": "string", "const": "active_job" },
+        "invalid_cursor": { "type": "string", "const": "invalid_cursor" },
+        "invalid_range": { "type": "string", "const": "invalid_range" },
+        "path_invalid": { "type": "string", "const": "invalid_request" },
+        "path_outside_workspace": { "type": "string", "const": "unauthorized" },
+        "path_symlink": { "type": "string", "const": "unauthorized" },
+        "path_unavailable": { "type": "string", "const": "io_failure" }
+      },
+      "required": [
+        "allow", "cancellation_requested", "cancellation_idempotent", "cancellation_terminal",
+        "transition_not_allowed", "invalid_status", "corrupt_state", "job_not_found", "unauthorized",
+        "active_job", "invalid_cursor", "invalid_range", "path_invalid", "path_outside_workspace",
+        "path_symlink", "path_unavailable"
+      ]
+    },
+    "transition": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "from": { "type": "string", "const": "running" },
+        "to": { "$ref": "#/$defs/terminalStatus" }
+      },
+      "required": ["from", "to"]
+    },
+    "accessRules": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "same_workspace_read": { "type": "string", "const": "allow" },
+        "cross_workspace_read": { "type": "string", "const": "job_not_found" },
+        "owner_mutation": { "type": "string", "const": "allow" },
+        "non_owner_mutation": { "type": "string", "const": "unauthorized" },
+        "cross_workspace_mutation": { "type": "string", "const": "job_not_found" }
+      },
+      "required": [
+        "same_workspace_read", "cross_workspace_read", "owner_mutation",
+        "non_owner_mutation", "cross_workspace_mutation"
+      ]
+    },
+    "removalRules": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "active_status": { "type": "string", "const": "running" },
+        "active_code": { "type": "string", "const": "active_job" },
+        "terminal_code": { "type": "string", "const": "allow" }
+      },
+      "required": ["active_status", "active_code", "terminal_code"]
+    },
+    "cancellationRules": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "initial_code": { "type": "string", "const": "cancellation_requested" },
+        "repeated_code": { "type": "string", "const": "cancellation_idempotent" },
+        "terminal_code": { "type": "string", "const": "cancellation_terminal" }
+      },
+      "required": ["initial_code", "repeated_code", "terminal_code"]
+    },
+    "cursorRules": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "invalid_cursor_code": { "type": "string", "const": "invalid_cursor" },
+        "invalid_range_code": { "type": "string", "const": "invalid_range" }
+      },
+      "required": ["invalid_cursor_code", "invalid_range_code"]
+    },
+    "pathRules": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "invalid_code": { "type": "string", "const": "path_invalid" },
+        "outside_code": { "type": "string", "const": "path_outside_workspace" },
+        "symlink_code": { "type": "string", "const": "path_symlink" },
+        "unavailable_code": { "type": "string", "const": "path_unavailable" }
+      },
+      "required": ["invalid_code", "outside_code", "symlink_code", "unavailable_code"]
+    },
+    "lifecycleRules": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "ttl_enabled": { "type": "boolean", "const": false },
+        "restart_reattachment": { "type": "boolean", "const": false }
+      },
+      "required": ["ttl_enabled", "restart_reattachment"]
+    }
+  }
+}

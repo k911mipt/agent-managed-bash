@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "session": { "schema_version": 1, "session_id": "session-1", "workspace_path": "/workspace", "created_at_unix_ms": 900 },
+  "job": {
+    "job_id": "job-1", "status": "cancelled", "owner_session_id": "session-1",
+    "workspace_path": "/workspace", "cwd": "/workspace", "command": "sleep 30",
+    "created_at_unix_ms": 1000, "started_at_unix_ms": 1001, "finished_at_unix_ms": 1010,
+    "captured_bytes": 0, "hard_timeout_ms": 60000, "output_limit_bytes": 104857600
+  },
+  "result": { "status": "cancelled", "finished_at_unix_ms": 1010, "captured_bytes": 0, "signal": 15 },
+  "cancellation": { "requested": true, "requested_at_unix_ms": 1005, "requested_by_session_id": "session-1" },
+  "observers": []
+}

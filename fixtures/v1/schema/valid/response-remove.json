@@ -1,0 +1,4 @@
+{
+  "schema_version": 1, "ok": true, "action": "remove",
+  "result": { "job_id": "job-1", "removed": true }
+}

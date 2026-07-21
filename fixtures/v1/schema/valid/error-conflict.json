@@ -1,0 +1,4 @@
+{
+  "schema_version": 1, "ok": false, "action": "remove",
+  "error": { "code": "active_job", "message": "job is active" }
+}

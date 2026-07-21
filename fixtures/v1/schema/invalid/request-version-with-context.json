@@ -1,0 +1,4 @@
+{
+  "schema_version": 1, "action": "version",
+  "context": { "session_id": "session-1", "workspace_path": "/workspace", "cwd": "/workspace" }
+}

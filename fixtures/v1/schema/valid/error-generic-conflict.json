@@ -1,0 +1,4 @@
+{
+  "schema_version": 1, "ok": false, "action": "cancel",
+  "error": { "code": "conflict", "message": "request conflicts with job state" }
+}
