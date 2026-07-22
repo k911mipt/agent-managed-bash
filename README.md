@@ -2,7 +2,7 @@
 
 Observable, cancellable long-running shell jobs for coding agents.
 
-> Status: protocol v1, persisted-state policy, and the detached per-job Go runner are implemented. CLI and OpenCode integrations are not implemented yet.
+> Status: protocol v1, persisted-state policy, the detached per-job Go runner, and the `managed-bash` CLI are implemented. OpenCode integration and packaging remain pending.
 
 The v1 CLI contract permits a bounded one-shot read of the full captured prefix, up to 100 MiB. Capture appends retain only the accepted incoming prefix so repeated writes do not copy the full history.
 
@@ -37,6 +37,10 @@ bun install --frozen-lockfile
 | `make state-schema-test` | Validate immutable policy data and run semantic state-policy conformance tests. |
 | `make schema-check` | Run reproducibility, protocol fixtures, generated-model compilation, and state policy. |
 | `make runner-test` | Run the detached runner tests with the race detector and randomized order. |
+| `make cli-test` | Run focused protocol-validator, CLI, and command-package tests. |
+| `make cli-race-test` | Run focused CLI tests with the race detector and randomized order. |
+| `make cli-build` | Build `bin/managed-bash`. |
+| `make cli-acceptance` | Build and exercise the real binary through help, version, lifecycle, malformed, and incompatible-version scenarios. |
 | `make go-check` | Run all Go tests with the race detector, then vet and build every package. |
 
 Run the doctor failure contract with:
@@ -45,6 +49,32 @@ Run the doctor failure contract with:
 sh tests/doctor_test.sh
 sh tests/schema_generation_test.sh
 ```
+
+## CLI protocol
+
+Build the binary with:
+
+```sh
+make cli-build
+```
+
+Every action reads one protocol-v1 JSON request from stdin and writes one schema-valid JSON response plus a newline to stdout. Diagnostics use stderr. The public actions are `run`, `wait`, `status`, `output`, `cancel`, `remove`, `list`, and `version`; command text is accepted only inside the `run` request body.
+
+`version` does not require runner initialization or trusted host context:
+
+```sh
+printf '%s' '{"schema_version":1,"action":"version"}' | bin/managed-bash version
+```
+
+Stateful actions bind the request assertion to host-owned context:
+
+- `MANAGED_BASH_HOST_SESSION_ID`: trusted session identifier.
+- `MANAGED_BASH_HOST_WORKSPACE_PATH`: physical canonical workspace root.
+- process working directory: trusted current directory, which must be inside that workspace.
+
+The CLI removes both host variables before starting a shell, so commands cannot inherit them. For direct local diagnostics, enter the intended physical cwd, export the two variables, and send matching `context` values in the stdin request. Missing or mismatched host context is `unauthorized`; symlink traversal and paths outside the workspace fail closed.
+
+All successful protocol actions exit 0, including observations of jobs that finish nonzero or by signal. Protocol failures use stable exit classes 2 (validation/version), 3 (authorization/not found), 4 (conflict), and 5 (runner/I/O/internal).
 
 ## Repository layout
 
