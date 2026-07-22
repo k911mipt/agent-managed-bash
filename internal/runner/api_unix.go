@@ -91,7 +91,7 @@ func (manager *Manager) Start(
 	command.ExtraFiles = []*os.File{responseWrite, workspace, cwd}
 	if err := command.Start(); err != nil {
 		return generated.JobMetadata{}, errors.Join(
-			fmt.Errorf("start bootstrap: %w", err), requestRead.Close(), requestWrite.Close(),
+			fmt.Errorf("%w: start bootstrap: %w", ErrStartupFailed, err), requestRead.Close(), requestWrite.Close(),
 			responseRead.Close(), responseWrite.Close(),
 		)
 	}

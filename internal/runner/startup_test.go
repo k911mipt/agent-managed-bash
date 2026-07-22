@@ -85,3 +85,19 @@ func Test_Manager_pre_cancelled_start_does_not_spawn_or_publish(t *testing.T) {
 	require.ErrorIs(t, markerErr, os.ErrNotExist)
 	require.ErrorIs(t, managedErr, os.ErrNotExist)
 }
+
+func Test_Manager_classifies_missing_executable_as_startup_failure(t *testing.T) {
+	// Given
+	workspace := t.TempDir()
+	invocation := trustedInvocation(t, workspace, workspace)
+	manager, err := runner.New(runner.Config{Executable: filepath.Join(workspace, "missing-managed-bash")})
+	require.NoError(t, err)
+
+	// When
+	_, err = manager.Start(context.Background(), runner.StartRequest{
+		Invocation: invocation, Command: "printf unreachable", HardTimeout: time.Second, OutputLimitBytes: 1024,
+	})
+
+	// Then
+	require.ErrorIs(t, err, runner.ErrStartupFailed)
+}
