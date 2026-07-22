@@ -2,6 +2,11 @@
   "name": "@agent-managed-bash/opencode",
   "private": true,
   "scripts": {
+    "test": "bun test src",
     "typecheck": "tsc --noEmit --project tsconfig.json"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "1.18.4",
+    "ajv": "8.20.0"
   }
 }
