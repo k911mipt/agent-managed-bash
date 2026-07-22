@@ -54,6 +54,20 @@ func (v PersistedStateValidator) Validate(
 	raw []byte,
 	hostWorkspace string,
 ) (generated.PersistedJobState, Decision) {
+	validated, decision := v.ValidateStored(raw, hostWorkspace)
+	if !decision.Allowed {
+		return generated.PersistedJobState{}, decision
+	}
+	if pathDecision := v.policy.validateWorkspaceDirectories(hostWorkspace, validated.Job.Cwd); !pathDecision.Allowed {
+		return generated.PersistedJobState{}, corruptStateDecision()
+	}
+	return validated, decision
+}
+
+func (v PersistedStateValidator) ValidateStored(
+	raw []byte,
+	hostWorkspace string,
+) (generated.PersistedJobState, Decision) {
 	if !utf8.Valid(raw) {
 		return generated.PersistedJobState{}, corruptStateDecision()
 	}
@@ -75,9 +89,6 @@ func (v PersistedStateValidator) Validate(
 		return generated.PersistedJobState{}, decision
 	}
 	if state.Job.WorkspacePath != hostWorkspace {
-		return generated.PersistedJobState{}, corruptStateDecision()
-	}
-	if pathDecision := v.policy.validateWorkspaceDirectories(hostWorkspace, state.Job.Cwd); !pathDecision.Allowed {
 		return generated.PersistedJobState{}, corruptStateDecision()
 	}
 	return state, decision
