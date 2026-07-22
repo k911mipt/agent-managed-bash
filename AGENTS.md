@@ -7,8 +7,8 @@ These instructions apply to the entire repository. Keep this file limited to sta
 ## Architecture
 
 - `managed-bash` is one Go binary. It exposes the public JSON-over-stdin CLI and launches its detached bootstrap, runner, and guardian modes from the same executable.
-- `plugins/opencode/` is a TypeScript+Bun OpenCode plugin. Keep it as a thin adapter for permissions, trusted OpenCode context, protocol transport, presentation, and session cleanup.
-- The Go binary owns process execution, persisted state, output capture, hard timeouts, and process-group cleanup. Do not move those responsibilities into the plugin.
+- `plugins/opencode/` is a TypeScript+Bun OpenCode plugin. Keep it as a thin adapter for permissions, trusted OpenCode context, protocol transport, presentation, and session cleanup requests.
+- The Go binary owns process execution, persisted state, output capture, hard timeouts, and process-group cleanup. The plugin may request cancellation, but must not perform those responsibilities itself.
 - JSON Schema draft 2020-12 files under `schemas/v1/` are the protocol and persisted-state source of truth.
 - The product has no permanent daemon. Do not introduce one without an explicit design change.
 
@@ -20,6 +20,7 @@ These instructions apply to the entire repository. Keep this file limited to sta
 - Supported runtime targets: Linux and macOS on amd64 and arm64
 
 Run `make doctor` before diagnosing toolchain failures. Keep Go and Bun pins exact unless the change explicitly upgrades them.
+Scripts intended for both supported operating systems must not depend on GNU-only command flags.
 
 ## Generated Protocol Code
 
@@ -34,14 +35,14 @@ Keep Go and TypeScript consumers on the same fixture manifest under `fixtures/v1
 
 ## Runtime Invariants
 
-- Runtime state lives at `<workspace>/.managed_bash/jobs/`. Installation, update, and uninstall logic must preserve every workspace's `.managed_bash` tree.
-- `wait_timeout` and `idle_timeout` return control without terminating a job. Hard timeout, explicit cancellation, and output-limit enforcement terminate the process group.
+- Runtime state lives at `<workspace>/.managed_bash/jobs/`. Code outside the Go runner must not delete, relocate, or rewrite a workspace's `.managed_bash` tree.
+- Wait and idle checkpoints return control without terminating a job. Hard timeout, explicit cancellation, and output-limit enforcement terminate the process group.
 - Preserve whole-process-group cleanup, including descendants that ignore `SIGTERM`.
 - Treat session ID, workspace path, and cwd from the host as trusted context. Model-supplied values must not override them.
 - Keep workspace paths physical, canonical, and symlink-safe. Cross-workspace reads look like missing jobs; mutations require the owner session.
 - The plugin must fail with a structured tool error when the binary is missing, malformed, or incompatible. It must never fall back to built-in Bash.
 - `remove` deletes one terminal job. It is not package uninstall and must reject active jobs.
-- Restart reattachment is outside the current contract. Do not imply that preserved state makes active jobs reattachable after a restart.
+- Protocol v1 does not support restart reattachment. Do not imply that preserved state makes active jobs reattachable after a restart.
 
 ## Change Workflow
 
@@ -55,24 +56,18 @@ Keep tests deterministic. Use temporary workspaces and bounded waits instead of 
 
 ## Verification Commands
 
-| Area | Required commands |
+The rows are cumulative: run every row affected by a change. Any Go implementation change also requires `make go-check`.
+
+| Area | Minimum commands |
 |---|---|
 | Toolchain | `make doctor` |
 | Protocol and generated state | `make schema-check` |
 | Runner | `make runner-test` |
 | CLI | `make cli-race-test` and `make cli-acceptance` |
-| OpenCode plugin | `make plugin-test` and `make generated-model-compile` |
+| OpenCode plugin | `make plugin-test` and `make plugin-typecheck` |
 | Repository-wide Go changes | `make go-check` |
 
 Run `sh tests/doctor_test.sh` or `sh tests/schema_generation_test.sh` when changing their corresponding scripts or failure contracts.
-
-## Packaging and Portability
-
-- Keep packaging local and reproducible. GitHub release automation is not part of the functional MVP.
-- Build scripts used on both supported operating systems must not depend on GNU-only command flags.
-- A bundle must use installed artifacts rather than repository source paths at runtime.
-- Verify binary, plugin, and protocol compatibility before replacing an installation.
-- Stage multi-file installation updates and preserve the previous complete installation until the replacement succeeds.
 
 ## Worktree Hygiene
 
