@@ -1,5 +1,7 @@
-.PHONY: doctor generated-model-compile go-check protocol-schema-test runner-test schema-check schema-generate schema-generated-check state-schema-test
+.PHONY: cli-acceptance cli-build cli-race-test cli-test doctor generated-model-compile go-check protocol-schema-test runner-test schema-check schema-generate schema-generated-check state-schema-test
 
+CLI_BINARY ?= bin/managed-bash
+CLI_PACKAGE ?= ./cmd/managed-bash
 GO_GENERATED ?= internal/protocol/generated/models.gen.go
 TS_GENERATED ?= plugins/opencode/src/generated/protocol.gen.ts
 SCHEMA_ROOT ?= schemas/v1
@@ -7,6 +9,19 @@ GO_GENERATOR ?= go tool go-jsonschema
 
 doctor:
 	@./scripts/doctor.sh
+
+cli-test:
+	@GOTOOLCHAIN=local go test ./internal/protocol ./internal/cli $(CLI_PACKAGE)
+
+cli-race-test:
+	@GOTOOLCHAIN=local go test -race -shuffle=on -count=1 ./internal/protocol ./internal/cli $(CLI_PACKAGE)
+
+cli-build:
+	@mkdir -p "$(dir $(CLI_BINARY))"
+	@GOTOOLCHAIN=local go build -trimpath -o "$(CLI_BINARY)" $(CLI_PACKAGE)
+
+cli-acceptance: cli-build
+	@sh tests/cli_binary_test.sh "$(abspath $(CLI_BINARY))"
 
 schema-generate:
 	@set -eu; stage=$$(mktemp -d); trap 'rm -rf "$$stage"' EXIT HUP INT TERM; \
