@@ -1,4 +1,4 @@
-.PHONY: cli-acceptance cli-build cli-race-test cli-test doctor generated-model-compile go-check protocol-schema-test runner-test schema-check schema-generate schema-generated-check state-schema-test
+.PHONY: cli-acceptance cli-build cli-race-test cli-test doctor generated-model-compile go-check plugin-test plugin-typecheck protocol-schema-test runner-test schema-check schema-generate schema-generated-check state-schema-test
 
 CLI_BINARY ?= bin/managed-bash
 CLI_PACKAGE ?= ./cmd/managed-bash
@@ -47,7 +47,13 @@ schema-generated-check:
 generated-model-compile:
 	@GOTOOLCHAIN=local go test ./internal/protocol/...
 	@bun run --silent typecheck:scripts
+	@$(MAKE) --no-print-directory plugin-typecheck
+
+plugin-typecheck:
 	@bun run --silent --cwd plugins/opencode typecheck
+
+plugin-test:
+	@bun run --silent --cwd plugins/opencode test
 
 protocol-schema-test:
 	@GOTOOLCHAIN=local go test -run 'Test_(ProtocolSchemaFixtures|FixtureManifest)' ./internal/protocol
