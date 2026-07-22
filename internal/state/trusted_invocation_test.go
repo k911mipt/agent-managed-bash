@@ -91,3 +91,26 @@ func Test_BindTrustedInvocation_descriptor_validates_workspace_and_nested_cwd(t 
 		})
 	}
 }
+
+func Test_TrustedInvocation_exposes_read_only_bound_values(t *testing.T) {
+	// Given
+	policy := loadTestPolicy(t)
+	workspace := filepath.Join(t.TempDir(), "workspace")
+	cwd := filepath.Join(workspace, "cwd")
+	require.NoError(t, os.MkdirAll(cwd, 0o700))
+	invocation, decision := policy.BindTrustedInvocation(
+		HostInvocation{SessionID: "session-1", WorkspacePath: workspace, Cwd: cwd},
+		generated.TrustedContext{SessionID: "session-1", WorkspacePath: workspace, Cwd: cwd},
+	)
+	require.True(t, decision.Allowed)
+
+	// When
+	sessionID := invocation.SessionID()
+	boundWorkspace := invocation.WorkspacePath()
+	boundCwd := invocation.Cwd()
+
+	// Then
+	require.Equal(t, generated.SessionID("session-1"), sessionID)
+	require.Equal(t, workspace, boundWorkspace)
+	require.Equal(t, cwd, boundCwd)
+}

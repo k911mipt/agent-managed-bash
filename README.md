@@ -2,7 +2,7 @@
 
 Observable, cancellable long-running shell jobs for coding agents.
 
-> Status: protocol v1 schemas, generated DTOs, and semantic state policy are implemented. The job runner and integrations are not implemented yet.
+> Status: protocol v1, persisted-state policy, and the detached per-job Go runner are implemented. CLI and OpenCode integrations are not implemented yet.
 
 The v1 CLI contract permits a bounded one-shot read of the full captured prefix, up to 100 MiB. Capture appends retain only the accepted incoming prefix so repeated writes do not copy the full history.
 
@@ -36,6 +36,8 @@ bun install --frozen-lockfile
 | `make generated-model-compile` | Compile focused Go and strict TypeScript consumers of the generated DTOs. |
 | `make state-schema-test` | Validate immutable policy data and run semantic state-policy conformance tests. |
 | `make schema-check` | Run reproducibility, protocol fixtures, generated-model compilation, and state policy. |
+| `make runner-test` | Run the detached runner tests with the race detector and randomized order. |
+| `make go-check` | Run all Go tests with the race detector, then vet and build every package. |
 
 Run the doctor failure contract with:
 

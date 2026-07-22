@@ -1,4 +1,4 @@
-.PHONY: doctor generated-model-compile protocol-schema-test schema-check schema-generate schema-generated-check state-schema-test
+.PHONY: doctor generated-model-compile go-check protocol-schema-test runner-test schema-check schema-generate schema-generated-check state-schema-test
 
 GO_GENERATED ?= internal/protocol/generated/models.gen.go
 TS_GENERATED ?= plugins/opencode/src/generated/protocol.gen.ts
@@ -40,5 +40,13 @@ protocol-schema-test:
 
 state-schema-test:
 	@GOTOOLCHAIN=local go test ./internal/state
+
+runner-test:
+	@GOTOOLCHAIN=local go test -race -shuffle=on -count=1 ./internal/runner
+
+go-check:
+	@GOTOOLCHAIN=local go test -race -shuffle=on -count=1 ./...
+	@GOTOOLCHAIN=local go vet ./...
+	@GOTOOLCHAIN=local go build ./...
 
 schema-check: schema-generated-check protocol-schema-test generated-model-compile state-schema-test
