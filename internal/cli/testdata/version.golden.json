@@ -1,0 +1,1 @@
+{"action":"version","ok":true,"result":{"architecture":"${GOARCH}","binary_version":"0.1.0","os":"${GOOS}","product":"managed-bash","protocol_version":1},"schema_version":1}
