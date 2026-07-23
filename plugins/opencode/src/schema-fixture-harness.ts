@@ -1,12 +1,10 @@
 import { readFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import Ajv2020, {
-  type AnySchemaObject,
   type JSONSchemaType,
   type ValidateFunction,
 } from "ajv/dist/2020"
-
-export type SchemaRoot = "request" | "response" | "state"
+import type { SchemaRoot } from "./protocol-validators"
 
 export type FixtureCase = {
   readonly name: string
@@ -22,8 +20,6 @@ export type FixtureManifest = {
 export type ParseResult =
   | { readonly kind: "parsed"; readonly value: unknown }
   | { readonly kind: "rejected" }
-
-export type ProtocolValidators = Readonly<Record<SchemaRoot, ValidateFunction<unknown>>>
 
 const manifestSchema = {
   type: "object",
@@ -47,15 +43,6 @@ const manifestSchema = {
   },
   required: ["cases"],
 } as const satisfies JSONSchemaType<FixtureManifest>
-
-const schemaFiles = [
-  "models.schema.json",
-  "request.schema.json",
-  "response.schema.json",
-  "state.schema.json",
-] as const
-
-const schemaBaseURL = "https://agent-managed-bash.dev/schema/v1/"
 
 export function parseRawJSON(rawDocument: Uint8Array): ParseResult {
   try {
@@ -86,34 +73,6 @@ export async function loadFixtureManifest(repositoryRoot: string): Promise<Fixtu
   }
 }
 
-export async function compileProtocolValidators(
-  repositoryRoot: string,
-): Promise<ProtocolValidators> {
-  const ajv = new Ajv2020({ allErrors: true, strict: true })
-  for (const fileName of schemaFiles) {
-    const path = resolve(repositoryRoot, "schemas/v1", fileName)
-    const parsed = parseRawJSON(await readFile(path))
-    switch (parsed.kind) {
-      case "parsed":
-        if (!isSchemaObject(parsed.value)) {
-          throw new TypeError(`invalid JSON schema: ${path}`)
-        }
-        ajv.addSchema(parsed.value)
-        break
-      case "rejected":
-        throw new TypeError(`invalid JSON schema: ${path}`)
-      default:
-        assertNever(parsed)
-    }
-  }
-
-  return {
-    request: requireValidator(ajv.getSchema(`${schemaBaseURL}request.schema.json`), "request"),
-    response: requireValidator(ajv.getSchema(`${schemaBaseURL}response.schema.json`), "response"),
-    state: requireValidator(ajv.getSchema(`${schemaBaseURL}state.schema.json`), "state"),
-  }
-}
-
 export function validateRawDocument(
   rawDocument: Uint8Array,
   validator: ValidateFunction<unknown>,
@@ -131,20 +90,6 @@ export function validateRawDocument(
 
 const manifestAjv = new Ajv2020({ strict: true })
 const validateManifest = manifestAjv.compile(manifestSchema)
-
-function isSchemaObject(value: unknown): value is AnySchemaObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-function requireValidator(
-  validator: ValidateFunction<unknown> | undefined,
-  root: SchemaRoot,
-): ValidateFunction<unknown> {
-  if (validator === undefined) {
-    throw new TypeError(`missing compiled ${root} schema`)
-  }
-  return validator
-}
 
 function assertNever(value: never): never {
   throw new TypeError(`unreachable variant: ${String(value)}`)

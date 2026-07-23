@@ -8,6 +8,7 @@
     "forceConsistentCasingInFileNames": true,
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "resolveJsonModule": true,
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "target": "ESNext",
@@ -22,6 +23,7 @@
     "noEmit": true
   },
   "include": [
-    "scripts/**/*.ts"
+    "scripts/**/*.ts",
+    "e2e/**/*.ts"
   ]
 }
