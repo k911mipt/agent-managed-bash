@@ -1,4 +1,4 @@
-.PHONY: cli-acceptance cli-build cli-race-test cli-test doctor e2e-test generated-model-compile go-check installed-opencode-e2e opencode-plugin-discovery-test plugin-bundle plugin-bundle-test plugin-test plugin-typecheck protocol-schema-test release-package release-package-test release-version-test runner-test schema-check schema-generate schema-generated-check state-schema-test verify
+.PHONY: cli-acceptance cli-build cli-race-test cli-test doctor e2e-test generated-model-compile go-check installed-opencode-e2e opencode-plugin-config-test plugin-bundle plugin-bundle-test plugin-test plugin-typecheck protocol-schema-test release-package release-package-test release-version-test runner-test schema-check schema-generate schema-generated-check state-schema-test verify
 
 CLI_BINARY ?= bin/managed-bash
 CLI_PACKAGE ?= ./cmd/managed-bash
@@ -71,8 +71,8 @@ plugin-bundle:
 plugin-bundle-test:
 	@sh tests/plugin_bundle_test.sh
 
-opencode-plugin-discovery-test: plugin-bundle
-	@sh tests/opencode_plugin_discovery_test.sh
+opencode-plugin-config-test: plugin-bundle
+	@sh tests/opencode_plugin_config_test.sh
 
 release-package: plugin-bundle
 	@test -n "$(SOURCE_DATE_EPOCH)" || { printf '%s\n' 'SOURCE_DATE_EPOCH is required' >&2; exit 1; }
@@ -102,7 +102,7 @@ verify:
 	@$(MAKE) --no-print-directory plugin-test
 	@$(MAKE) --no-print-directory plugin-typecheck
 	@$(MAKE) --no-print-directory plugin-bundle-test
-	@$(MAKE) --no-print-directory opencode-plugin-discovery-test
+	@$(MAKE) --no-print-directory opencode-plugin-config-test
 	@$(MAKE) --no-print-directory release-package-test
 	@sh tests/installed_opencode_test.sh
 	@$(MAKE) --no-print-directory go-check
