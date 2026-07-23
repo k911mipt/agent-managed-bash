@@ -1,19 +1,17 @@
 import { describe, expect, test } from "bun:test"
-import { resolve } from "node:path"
 import type { ToolContext } from "@opencode-ai/plugin"
 import type { Request, Response } from "./generated/protocol.gen"
 import type { CliExecutor } from "./cli-transport"
 import { createManagedBashController } from "./managed-bash-plugin"
 
 const encoder = new TextEncoder()
-const repositoryRoot = resolve(import.meta.dir, "../../..")
 
 describe("managed_bash", () => {
   test("asks native bash permission before the version handshake and run request", async () => {
     // Given
     const calls: Request[] = []
     const executor = fakeExecutor(calls)
-    const controller = await createManagedBashController({ executor, repositoryRoot })
+    const controller = await createManagedBashController({ executor })
     const denied = new Error("permission denied")
     const asks: unknown[] = []
     const context = toolContext(async (request) => {
@@ -39,7 +37,6 @@ describe("managed_bash", () => {
     const calls: Request[] = []
     const controller = await createManagedBashController({
       executor: fakeExecutor(calls),
-      repositoryRoot,
     })
     const context = toolContext()
 
@@ -72,7 +69,7 @@ describe("managed_bash", () => {
         return { exitCode: 5, stderr: new Uint8Array(), stdout: encoder.encode("not json\n") }
       },
     }
-    const controller = await createManagedBashController({ executor, repositoryRoot })
+    const controller = await createManagedBashController({ executor })
 
     // When
     const result = await controller.execute({ action: "run", command: "printf ok" }, toolContext())
@@ -92,7 +89,6 @@ describe("managed_bash", () => {
     const calls: Request[] = []
     const controller = await createManagedBashController({
       executor: fakeExecutor(calls),
-      repositoryRoot,
     })
 
     // When
@@ -111,7 +107,6 @@ describe("managed_bash", () => {
     const calls: Request[] = []
     const controller = await createManagedBashController({
       executor: fakeExecutor(calls),
-      repositoryRoot,
     })
     let asks = 0
 
@@ -146,10 +141,39 @@ describe("managed_bash", () => {
         })
       },
     }
-    const controller = await createManagedBashController({ executor, repositoryRoot })
+    const controller = await createManagedBashController({ executor })
 
     const result = await controller.execute({ action: "run", command: "printf ok" }, toolContext())
 
+    expect(calls).toHaveLength(1)
+    expect(typeof result).toBe("object")
+    if (typeof result === "string") {
+      throw new TypeError("expected structured tool result")
+    }
+    expect(result.output).toContain("runner_protocol_error")
+  })
+
+  test("rejects a binary from a different release", async () => {
+    // Given
+    const calls: Request[] = []
+    const executor: CliExecutor = {
+      async execute(request) {
+        calls.push(request)
+        return response({
+          ...versionResponse(),
+          result: { ...versionResponse().result, binary_version: "0.1.0" },
+        })
+      },
+    }
+    const controller = await createManagedBashController({
+      executor,
+      pluginVersion: "0.2.0",
+    })
+
+    // When
+    const result = await controller.execute({ action: "run", command: "printf ok" }, toolContext())
+
+    // Then
     expect(calls).toHaveLength(1)
     expect(typeof result).toBe("object")
     if (typeof result === "string") {
@@ -205,7 +229,7 @@ function versionResponse(): Extract<Response, { action: "version" }> {
     action: "version",
     result: {
       product: "managed-bash",
-      binary_version: "test",
+      binary_version: "dev",
       protocol_version: 1,
       os: "linux",
       architecture: "amd64",

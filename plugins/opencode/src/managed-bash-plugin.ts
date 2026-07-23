@@ -1,4 +1,3 @@
-import { resolve } from "node:path"
 import {
   tool,
   type Plugin,
@@ -13,8 +12,12 @@ import {
   executeProtocolRequest,
   type CliExecutor,
 } from "./cli-transport"
-import type { Request, Response, TrustedContext } from "./generated/protocol.gen"
+import type { Response, TrustedContext } from "./generated/protocol.gen"
+import { formatExecutionError } from "./managed-bash-error"
+import { deletedSessionID } from "./managed-bash-event"
+import { requestFor, trustedContextFor } from "./managed-bash-request"
 import { formatProtocolResponse, formatToolError } from "./presentation"
+import { managedBashReleaseVersion } from "./release-version"
 import { createResponseValidator } from "./response-validator"
 
 export type ManagedBashController = {
@@ -25,7 +28,7 @@ export type ManagedBashController = {
 
 export type ManagedBashControllerOptions = {
   readonly executor?: CliExecutor
-  readonly repositoryRoot?: string
+  readonly pluginVersion?: string
 }
 
 type TrackedJob = {
@@ -47,9 +50,9 @@ type PendingRun = {
 export async function createManagedBashController(
   options: ManagedBashControllerOptions = {},
 ): Promise<ManagedBashController> {
-  const repositoryRoot = options.repositoryRoot ?? resolve(import.meta.dir, "../../..")
-  const validateResponse = await createResponseValidator(repositoryRoot)
+  const validateResponse = createResponseValidator()
   const executor = options.executor ?? createBunCliExecutor()
+  const pluginVersion = options.pluginVersion ?? managedBashReleaseVersion
   const closedSessionIDs = new Set<string>()
   const sessions = new Map<string, SessionState>()
   let disposed = false
@@ -81,7 +84,7 @@ export async function createManagedBashController(
         validateResponse,
       )
       return formatProtocolResponse(response)
-    } catch (error: unknown) {
+    } catch (error: unknown) { // no-excuse-ok: catch — formatExecutionError owns exhaustive narrowing.
       return formatExecutionError(error)
     }
   }
@@ -119,7 +122,7 @@ export async function createManagedBashController(
         await cancelTrackedJob({ jobID: response.result.job_id, context: trustedContext })
       }
       return formatProtocolResponse(response)
-    } catch (error: unknown) {
+    } catch (error: unknown) { // no-excuse-ok: catch — formatExecutionError owns exhaustive narrowing.
       return formatExecutionError(error)
     } finally {
       pendingRun.finish()
@@ -143,6 +146,7 @@ export async function createManagedBashController(
       if (
         response.action !== "version" ||
         response.result.product !== "managed-bash" ||
+        response.result.binary_version !== pluginVersion ||
         response.result.protocol_version !== 1
       ) {
         throw new CliProtocolError("version handshake reported an incompatible managed-bash binary")
@@ -262,86 +266,3 @@ export function createManagedBashPlugin(options: ManagedBashControllerOptions = 
 }
 
 export const ManagedBashPlugin: Plugin = createManagedBashPlugin()
-
-function trustedContextFor(context: ToolContext): TrustedContext {
-  return {
-    session_id: context.sessionID,
-    workspace_path: context.worktree,
-    cwd: context.directory,
-  }
-}
-
-function requestFor(action: ManagedBashAction, context: TrustedContext): Request {
-  switch (action.action) {
-    case "run":
-      return {
-        schema_version: 1,
-        action: "run",
-        context,
-        payload: {
-          command: action.command,
-          ...(action.hard_timeout_ms === undefined ? {} : { hard_timeout_ms: action.hard_timeout_ms }),
-          ...(action.output_limit_bytes === undefined ? {} : { output_limit_bytes: action.output_limit_bytes }),
-        },
-      }
-    case "wait":
-      return {
-        schema_version: 1,
-        action: "wait",
-        context,
-        payload: {
-          job_id: action.job_id,
-          ...(action.cursor_bytes === undefined ? {} : { cursor_bytes: action.cursor_bytes }),
-          ...(action.timeout_ms === undefined ? {} : { timeout_ms: action.timeout_ms }),
-          ...(action.idle_timeout_ms === undefined ? {} : { idle_timeout_ms: action.idle_timeout_ms }),
-        },
-      }
-    case "status":
-    case "cancel":
-    case "remove":
-      return { schema_version: 1, action: action.action, context, payload: { job_id: action.job_id } }
-    case "output":
-      return {
-        schema_version: 1,
-        action: "output",
-        context,
-        payload: {
-          job_id: action.job_id,
-          ...(action.start_cursor_bytes === undefined ? {} : { start_cursor_bytes: action.start_cursor_bytes }),
-          ...(action.end_cursor_bytes === undefined ? {} : { end_cursor_bytes: action.end_cursor_bytes }),
-        },
-      }
-    case "list":
-      return { schema_version: 1, action: "list", context }
-    case "version":
-      return { schema_version: 1, action: "version" }
-    default:
-      return assertNever(action)
-  }
-}
-
-function deletedSessionID(event: unknown): string | undefined {
-  if (!isRecord(event) || event["type"] !== "session.deleted" || !isRecord(event["properties"])) {
-    return undefined
-  }
-  const info = event["properties"]["info"]
-  return isRecord(info) && typeof info["id"] === "string" ? info["id"] : undefined
-}
-
-function formatExecutionError(error: unknown): ToolResult {
-  if (error instanceof CliProtocolError) {
-    return formatToolError("runner_protocol_error", error.message)
-  }
-  if (error instanceof DOMException && error.name === "AbortError") {
-    return formatToolError("runner_aborted", error.message)
-  }
-  return formatToolError("runner_transport_error", error instanceof Error ? error.message : "unknown runner failure")
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-function assertNever(value: never): never {
-  throw new TypeError(`unreachable action: ${String(value)}`)
-}
