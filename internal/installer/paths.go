@@ -37,6 +37,38 @@ func preflightLink(path string, ownedTarget string) (bool, error) {
 	return true, nil
 }
 
+func validateLinkState(path string, target string, expected bool) error {
+	exists, err := preflightLink(path, target)
+	if err != nil {
+		return err
+	}
+	if exists != expected {
+		return fmt.Errorf("registration %q changed during operation: %w", path, ErrForeignPath)
+	}
+	return nil
+}
+
+func removeExpectedLink(path string, target string, expected bool, beforeRemove func(string) error) (bool, error) {
+	if err := validateLinkState(path, target, expected); err != nil || !expected {
+		return false, err
+	}
+	if beforeRemove != nil {
+		if err := beforeRemove(path); err != nil {
+			return false, err
+		}
+	}
+	if err := validateLinkState(path, target, true); err != nil {
+		return false, err
+	}
+	if err := os.Remove(path); err != nil {
+		return false, fmt.Errorf("remove registration %q: %w", path, err)
+	}
+	if err := syncDirectory(filepath.Dir(path)); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
 func publishLink(path string, target string, beforeRename func(string), afterRename func(string) error) (bool, error) {
 	if err := ensureDirectory(filepath.Dir(path), 0o755); err != nil {
 		return false, err

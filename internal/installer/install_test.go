@@ -127,6 +127,33 @@ func Test_Install_postswitch_verification_failure_restores_old_pointer(t *testin
 	require.NoDirExists(t, filepath.Join(layout.dataRoot, "releases", "0.2.0-"+hostTarget()))
 }
 
+func Test_Install_legacy_cleanup_failure_restores_old_pointer(t *testing.T) {
+	// Given
+	layout := newTestLayout(t)
+	first := writeTestBundle(t, "0.1.0", "first")
+	second := writeTestBundle(t, "0.2.0", "second")
+	require.NoError(t, Install(context.Background(), layout.config(first, "0.1.0")))
+	writeOwnedLegacyPluginLink(t, layout)
+	pluginDirectory := filepath.Dir(layout.legacyPluginLink)
+	t.Cleanup(func() { require.NoError(t, os.Chmod(pluginDirectory, 0o755)) })
+
+	// When
+	err := installWithHooks(context.Background(), layout.config(second, "0.2.0"), hooks{
+		beforeLinkCleanup: func(path string) error {
+			if path == layout.legacyPluginLink {
+				return os.Chmod(pluginDirectory, 0o555)
+			}
+			return nil
+		},
+	})
+
+	// Then
+	require.Error(t, err)
+	require.Equal(t, "releases/0.1.0-"+hostTarget(), currentTarget(t, layout.dataRoot))
+	requireOwnedLegacyPluginLink(t, layout)
+	require.NoDirExists(t, filepath.Join(layout.dataRoot, "releases", "0.2.0-"+hostTarget()))
+}
+
 func Test_Install_postswitch_sync_failure_restores_old_pointer(t *testing.T) {
 	// Given
 	layout := newTestLayout(t)

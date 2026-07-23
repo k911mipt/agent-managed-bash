@@ -77,6 +77,7 @@ func installWithHooks(ctx context.Context, config Config, callbacks hooks) (err 
 		}
 	}
 	createdBin := false
+	switchedCurrent := false
 	rollbackInitial := func(cause error) error {
 		removeLink := func(path string, target string, created bool) error {
 			if created && callbacks.beforeLinkCleanup != nil {
@@ -101,6 +102,7 @@ func installWithHooks(ctx context.Context, config Config, callbacks hooks) (err 
 	}
 	if oldPointer.target != newTarget {
 		switched, err := switchCurrent(paths, oldPointer, newTarget, callbacks.afterCurrentRename)
+		switchedCurrent = switched
 		if err != nil {
 			if switched {
 				if rollbackErr := restoreCurrent(paths, newTarget, oldPointer); rollbackErr != nil {
@@ -118,7 +120,25 @@ func installWithHooks(ctx context.Context, config Config, callbacks hooks) (err 
 		cleanupErr := rollbackInitial(nil)
 		return errors.Join(err, cleanupErr)
 	}
-	return removeCreatedLink(paths.legacyPluginLink, pluginTarget, legacyPluginExists)
+	legacyRemoved, cleanupErr := removeExpectedLink(
+		paths.legacyPluginLink,
+		pluginTarget,
+		legacyPluginExists,
+		callbacks.beforeLinkCleanup,
+	)
+	if cleanupErr == nil {
+		return nil
+	}
+	if switchedCurrent {
+		if rollbackErr := restoreCurrent(paths, newTarget, oldPointer); rollbackErr != nil {
+			return errors.Join(cleanupErr, rollbackErr)
+		}
+	}
+	var restoreLegacyErr error
+	if legacyRemoved {
+		_, restoreLegacyErr = publishLink(paths.legacyPluginLink, pluginTarget, nil, nil)
+	}
+	return errors.Join(cleanupErr, restoreLegacyErr, rollbackInitial(nil))
 }
 
 func verifyInstalled(ctx context.Context, callbacks hooks, path string, expected identity) error {

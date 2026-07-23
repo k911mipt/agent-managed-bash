@@ -25,7 +25,7 @@ func uninstallWithHooks(ctx context.Context, config Config, callbacks hooks) err
 	}
 	binTarget := filepath.Join(paths.dataRoot, "current", "bin", "managed-bash")
 	pluginTarget := filepath.Join(paths.dataRoot, "current", "lib", "opencode", "managed-bash.js")
-	operationErr := uninstallLocked(paths, binTarget, pluginTarget)
+	operationErr := uninstallLocked(paths, binTarget, pluginTarget, callbacks)
 	if operationErr != nil {
 		return errors.Join(operationErr, lock.close())
 	}
@@ -36,7 +36,7 @@ func uninstallWithHooks(ctx context.Context, config Config, callbacks hooks) err
 	return errors.Join(unlinkErr, lock.close())
 }
 
-func uninstallLocked(paths installPaths, binTarget string, pluginTarget string) error {
+func uninstallLocked(paths installPaths, binTarget string, pluginTarget string, callbacks hooks) error {
 	binExists, err := preflightLink(paths.binLink, binTarget)
 	if err != nil {
 		return err
@@ -61,19 +61,22 @@ func uninstallLocked(paths installPaths, binTarget string, pluginTarget string) 
 			return err
 		}
 	}
+	if callbacks.beforeUninstallCommit != nil {
+		callbacks.beforeUninstallCommit()
+	}
+	if err := validateLinkState(paths.legacyPluginLink, pluginTarget, legacyPluginExists); err != nil {
+		return err
+	}
+	if err := validateLinkState(paths.binLink, binTarget, binExists); err != nil {
+		return err
+	}
 	if legacyPluginExists {
-		if err := os.Remove(paths.legacyPluginLink); err != nil {
-			return fmt.Errorf("remove plugin registration: %w", err)
-		}
-		if err := syncDirectory(filepath.Dir(paths.legacyPluginLink)); err != nil {
+		if _, err := removeExpectedLink(paths.legacyPluginLink, pluginTarget, true, nil); err != nil {
 			return err
 		}
 	}
 	if binExists {
-		if err := os.Remove(paths.binLink); err != nil {
-			return fmt.Errorf("remove binary registration: %w", err)
-		}
-		if err := syncDirectory(filepath.Dir(paths.binLink)); err != nil {
+		if _, err := removeExpectedLink(paths.binLink, binTarget, true, nil); err != nil {
 			return err
 		}
 	}

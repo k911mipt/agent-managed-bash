@@ -48,17 +48,18 @@ type currentPointer struct {
 }
 
 type hooks struct {
-	beforeLock          func()
-	afterLock           func()
-	afterLockOpen       func(int)
-	beforeLockUnlink    func()
-	beforeCommit        func() error
-	beforeLinkRename    func(string)
-	afterLinkRename     func(string) error
-	beforeLinkCleanup   func(string) error
-	beforeReleaseRename func(string)
-	afterCurrentRename  func() error
-	verifyInstalled     func(context.Context, string, identity) error
+	beforeLock            func()
+	afterLock             func()
+	afterLockOpen         func(int)
+	beforeLockUnlink      func()
+	beforeUninstallCommit func()
+	beforeCommit          func() error
+	beforeLinkRename      func(string)
+	afterLinkRename       func(string) error
+	beforeLinkCleanup     func(string) error
+	beforeReleaseRename   func(string)
+	afterCurrentRename    func() error
+	verifyInstalled       func(context.Context, string, identity) error
 }
 
 func pathsFromConfig(config Config) (installPaths, error) {
