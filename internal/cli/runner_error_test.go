@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/k911mipt/agent-managed-bash/internal/protocol/generated"
@@ -44,7 +45,7 @@ func Test_Application_run_returns_runner_unavailable_for_incompatible_executable
 	workspace := t.TempDir()
 	useWorkingDirectory(t, workspace)
 	executable := filepath.Join(workspace, "incompatible-managed-bash")
-	require.NoError(t, os.WriteFile(executable, []byte("#!/bin/sh\nprintf 'OLD!000000' >&3\n"), 0o700))
+	require.NoError(t, os.WriteFile(executable, []byte("#!/bin/sh\nexit 0\n"), 0o700))
 	application, err := New(Config{
 		BinaryVersion: "dev",
 		Runner:        runner.Config{Executable: executable},
@@ -53,7 +54,7 @@ func Test_Application_run_returns_runner_unavailable_for_incompatible_executable
 	request := generated.RunRequest{
 		Action:        "run",
 		Context:       generated.TrustedContext{SessionID: "session-1", WorkspacePath: workspace, Cwd: workspace},
-		Payload:       generated.RunPayload{Command: "printf unreachable"},
+		Payload:       generated.RunPayload{Command: strings.Repeat("x", 65_536)},
 		SchemaVersion: 1,
 	}
 
