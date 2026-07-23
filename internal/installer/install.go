@@ -52,7 +52,7 @@ func installWithHooks(ctx context.Context, config Config, callbacks hooks) (err 
 	if err != nil {
 		return err
 	}
-	pluginExists, err := preflightLink(paths.pluginLink, pluginTarget)
+	legacyPluginExists, err := preflightLink(paths.legacyPluginLink, pluginTarget)
 	if err != nil {
 		return err
 	}
@@ -68,7 +68,7 @@ func installWithHooks(ctx context.Context, config Config, callbacks hooks) (err 
 		return errors.Join(err, removeCreatedRelease(final, releaseCreated))
 	}
 	newTarget := currentReleaseTarget(installedIdentity)
-	if oldPointer.exists && oldPointer.target == newTarget && binExists && pluginExists {
+	if oldPointer.exists && oldPointer.target == newTarget && binExists && !legacyPluginExists {
 		return verifyInstalled(ctx, callbacks, filepath.Join(paths.dataRoot, "current", "bin", "managed-bash"), installedIdentity)
 	}
 	if callbacks.beforeCommit != nil {
@@ -77,7 +77,6 @@ func installWithHooks(ctx context.Context, config Config, callbacks hooks) (err 
 		}
 	}
 	createdBin := false
-	createdPlugin := false
 	rollbackInitial := func(cause error) error {
 		removeLink := func(path string, target string, created bool) error {
 			if created && callbacks.beforeLinkCleanup != nil {
@@ -87,28 +86,15 @@ func installWithHooks(ctx context.Context, config Config, callbacks hooks) (err 
 			}
 			return removeCreatedLink(path, target, created)
 		}
-		pluginErr := removeLink(paths.pluginLink, pluginTarget, createdPlugin)
 		binErr := removeLink(paths.binLink, binTarget, createdBin)
-		if pluginErr != nil || binErr != nil {
-			return errors.Join(cause, pluginErr, binErr)
+		if binErr != nil {
+			return errors.Join(cause, binErr)
 		}
 		return errors.Join(cause, removeCreatedRelease(final, releaseCreated))
 	}
 	if !binExists {
 		published, err := publishLink(paths.binLink, binTarget, callbacks.beforeLinkRename, callbacks.afterLinkRename)
 		createdBin = published
-		if err != nil {
-			return rollbackInitial(err)
-		}
-	}
-	if !pluginExists {
-		if callbacks.beforePluginLink != nil {
-			if err := callbacks.beforePluginLink(); err != nil {
-				return rollbackInitial(err)
-			}
-		}
-		published, err := publishLink(paths.pluginLink, pluginTarget, callbacks.beforeLinkRename, callbacks.afterLinkRename)
-		createdPlugin = published
 		if err != nil {
 			return rollbackInitial(err)
 		}
@@ -132,7 +118,7 @@ func installWithHooks(ctx context.Context, config Config, callbacks hooks) (err 
 		cleanupErr := rollbackInitial(nil)
 		return errors.Join(err, cleanupErr)
 	}
-	return nil
+	return removeCreatedLink(paths.legacyPluginLink, pluginTarget, legacyPluginExists)
 }
 
 func verifyInstalled(ctx context.Context, callbacks hooks, path string, expected identity) error {

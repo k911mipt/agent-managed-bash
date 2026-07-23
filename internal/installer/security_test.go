@@ -14,14 +14,15 @@ import (
 
 func Test_Install_refuses_foreign_registration(t *testing.T) {
 	tests := []struct {
-		name string
-		path func(testLayout) string
-		make func(*testing.T, string)
+		name        string
+		path        func(testLayout) string
+		make        func(*testing.T, string) string
+		wantSymlink bool
 	}{
-		{"binary regular file", func(layout testLayout) string { return layout.binLink }, writeForeignFile},
-		{"plugin regular file", func(layout testLayout) string { return layout.pluginLink }, writeForeignFile},
-		{"binary foreign symlink", func(layout testLayout) string { return layout.binLink }, writeForeignSymlink},
-		{"plugin foreign symlink", func(layout testLayout) string { return layout.pluginLink }, writeForeignSymlink},
+		{"binary regular file", func(layout testLayout) string { return layout.binLink }, writeForeignFile, false},
+		{"plugin regular file", func(layout testLayout) string { return layout.legacyPluginLink }, writeForeignFile, false},
+		{"binary foreign symlink", func(layout testLayout) string { return layout.binLink }, writeForeignSymlink, true},
+		{"plugin foreign symlink", func(layout testLayout) string { return layout.legacyPluginLink }, writeForeignSymlink, true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -30,7 +31,7 @@ func Test_Install_refuses_foreign_registration(t *testing.T) {
 			bundle := writeTestBundle(t, "0.1.0", "first")
 			path := test.path(layout)
 			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
-			test.make(t, path)
+			want := test.make(t, path)
 
 			// When
 			err := Install(context.Background(), layout.config(bundle, "0.1.0"))
@@ -38,27 +39,21 @@ func Test_Install_refuses_foreign_registration(t *testing.T) {
 			// Then
 			require.ErrorIs(t, err, ErrForeignPath)
 			require.NoFileExists(t, filepath.Join(layout.dataRoot, "current"))
+			info, statErr := os.Lstat(path)
+			require.NoError(t, statErr)
+			isSymlink := info.Mode()&os.ModeSymlink != 0
+			require.Equal(t, test.wantSymlink, isSymlink)
+			if isSymlink {
+				target, readErr := os.Readlink(path)
+				require.NoError(t, readErr)
+				require.Equal(t, want, target)
+				return
+			}
+			contents, readErr := os.ReadFile(path)
+			require.NoError(t, readErr)
+			require.Equal(t, want, string(contents))
 		})
 	}
-}
-
-func Test_Install_partial_initial_registration_is_rolled_back(t *testing.T) {
-	// Given
-	layout := newTestLayout(t)
-	bundle := writeTestBundle(t, "0.1.0", "first")
-	injected := errors.New("injected plugin registration failure")
-
-	// When
-	err := installWithHooks(context.Background(), layout.config(bundle, "0.1.0"), hooks{
-		beforePluginLink: func() error { return injected },
-	})
-
-	// Then
-	require.ErrorIs(t, err, injected)
-	require.NoFileExists(t, layout.binLink)
-	require.NoFileExists(t, layout.pluginLink)
-	require.NoFileExists(t, filepath.Join(layout.dataRoot, "current"))
-	require.NoDirExists(t, filepath.Join(layout.dataRoot, "releases", "0.1.0-"+hostTarget()))
 }
 
 func Test_Install_cleanup_failure_retains_release_for_visible_registration(t *testing.T) {
@@ -91,7 +86,8 @@ func Test_Install_cleanup_failure_retains_release_for_visible_registration(t *te
 	require.ErrorIs(t, err, publicationErr)
 	require.ErrorIs(t, err, cleanupErr)
 	require.Equal(t, "releases/0.1.0-"+hostTarget(), currentTarget(t, layout.dataRoot))
-	requireOwnedLinks(t, layout)
+	requireOwnedBinaryLink(t, layout)
+	require.NoFileExists(t, layout.legacyPluginLink)
 	require.DirExists(t, filepath.Join(layout.dataRoot, "releases", "0.2.0-"+hostTarget()))
 }
 
@@ -114,7 +110,7 @@ func Test_Install_postrename_registration_failure_is_rolled_back(t *testing.T) {
 	// Then
 	require.ErrorIs(t, err, injected)
 	require.NoFileExists(t, layout.binLink)
-	require.NoFileExists(t, layout.pluginLink)
+	require.NoFileExists(t, layout.legacyPluginLink)
 	require.NoFileExists(t, filepath.Join(layout.dataRoot, "current"))
 }
 
@@ -202,8 +198,24 @@ func Test_Uninstall_is_idempotent_and_preserves_workspace_state(t *testing.T) {
 	require.NoError(t, readErr)
 	require.Equal(t, want, got)
 	require.NoFileExists(t, layout.binLink)
-	require.NoFileExists(t, layout.pluginLink)
+	require.NoFileExists(t, layout.legacyPluginLink)
 	require.NoDirExists(t, filepath.Join(layout.dataRoot, "releases"))
+}
+
+func Test_Uninstall_removes_owned_legacy_plugin_registration(t *testing.T) {
+	// Given
+	layout := newTestLayout(t)
+	bundle := writeTestBundle(t, "0.1.0", "first")
+	require.NoError(t, Install(context.Background(), layout.config(bundle, "0.1.0")))
+	writeOwnedLegacyPluginLink(t, layout)
+
+	// When
+	err := Uninstall(context.Background(), layout.config("", "0.1.0"))
+
+	// Then
+	require.NoError(t, err)
+	_, statErr := os.Lstat(layout.legacyPluginLink)
+	require.ErrorIs(t, statErr, os.ErrNotExist)
 }
 
 func Test_Uninstall_refuses_foreign_current_before_removing_registrations(t *testing.T) {
@@ -211,6 +223,7 @@ func Test_Uninstall_refuses_foreign_current_before_removing_registrations(t *tes
 	layout := newTestLayout(t)
 	bundle := writeTestBundle(t, "0.1.0", "first")
 	require.NoError(t, Install(context.Background(), layout.config(bundle, "0.1.0")))
+	writeOwnedLegacyPluginLink(t, layout)
 	require.NoError(t, os.Remove(filepath.Join(layout.dataRoot, "current")))
 	require.NoError(t, os.Symlink("foreign", filepath.Join(layout.dataRoot, "current")))
 
@@ -219,15 +232,20 @@ func Test_Uninstall_refuses_foreign_current_before_removing_registrations(t *tes
 
 	// Then
 	require.ErrorIs(t, err, ErrForeignPath)
-	requireOwnedLinks(t, layout)
+	requireOwnedBinaryLink(t, layout)
+	require.FileExists(t, layout.legacyPluginLink)
 }
 
-func writeForeignFile(t *testing.T, path string) {
+func writeForeignFile(t *testing.T, path string) string {
 	t.Helper()
-	require.NoError(t, os.WriteFile(path, []byte("foreign"), 0o644))
+	const contents = "foreign"
+	require.NoError(t, os.WriteFile(path, []byte(contents), 0o644))
+	return contents
 }
 
-func writeForeignSymlink(t *testing.T, path string) {
+func writeForeignSymlink(t *testing.T, path string) string {
 	t.Helper()
-	require.NoError(t, os.Symlink(filepath.Join(t.TempDir(), "foreign"), path))
+	target := filepath.Join(t.TempDir(), "foreign")
+	require.NoError(t, os.Symlink(target, path))
+	return target
 }

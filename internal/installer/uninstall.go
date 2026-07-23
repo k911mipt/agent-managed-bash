@@ -41,7 +41,7 @@ func uninstallLocked(paths installPaths, binTarget string, pluginTarget string) 
 	if err != nil {
 		return err
 	}
-	pluginExists, err := preflightLink(paths.pluginLink, pluginTarget)
+	legacyPluginExists, err := preflightLink(paths.legacyPluginLink, pluginTarget)
 	if err != nil {
 		return err
 	}
@@ -61,11 +61,11 @@ func uninstallLocked(paths installPaths, binTarget string, pluginTarget string) 
 			return err
 		}
 	}
-	if pluginExists {
-		if err := os.Remove(paths.pluginLink); err != nil {
+	if legacyPluginExists {
+		if err := os.Remove(paths.legacyPluginLink); err != nil {
 			return fmt.Errorf("remove plugin registration: %w", err)
 		}
-		if err := syncDirectory(filepath.Dir(paths.pluginLink)); err != nil {
+		if err := syncDirectory(filepath.Dir(paths.legacyPluginLink)); err != nil {
 			return err
 		}
 	}

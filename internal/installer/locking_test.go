@@ -153,7 +153,8 @@ func Test_Uninstall_serializes_install_through_full_namespace_cleanup(t *testing
 	require.NoError(t, <-uninstallResult)
 	require.NoError(t, <-installResult)
 	<-installAcquiredLock
-	requireOwnedLinks(t, layout)
+	requireOwnedBinaryLink(t, layout)
+	require.NoFileExists(t, layout.legacyPluginLink)
 }
 
 func Test_Install_preserves_registration_created_by_racer(t *testing.T) {
