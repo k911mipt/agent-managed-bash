@@ -15,8 +15,9 @@ case $(opencode --version) in
 esac
 
 config_root="$stage/home/.config"
-plugin_path="$root/plugins/opencode/dist/managed-bash.js"
-mkdir -p "$config_root/opencode" "$stage/home/.local/share" "$stage/home/.cache" "$stage/home/.local/state"
+plugin_path="$stage/plugin #/managed-bash.js"
+mkdir -p "$config_root/opencode" "$(dirname "$plugin_path")" "$stage/home/.local/share" "$stage/home/.cache" "$stage/home/.local/state"
+ln -s "$root/plugins/opencode/dist/managed-bash.js" "$plugin_path"
 PLUGIN_PATH="$plugin_path" CONFIG_PATH="$config_root/opencode/opencode.json" bun -e '
 import { pathToFileURL } from "node:url"
 await Bun.write(process.env.CONFIG_PATH, `${JSON.stringify({ plugin: [pathToFileURL(process.env.PLUGIN_PATH).href] })}\n`)
