@@ -154,6 +154,33 @@ func Test_Install_legacy_cleanup_failure_restores_old_pointer(t *testing.T) {
 	require.NoDirExists(t, filepath.Join(layout.dataRoot, "releases", "0.2.0-"+hostTarget()))
 }
 
+func Test_Install_postunlink_cleanup_failure_restores_legacy_link(t *testing.T) {
+	// Given
+	layout := newTestLayout(t)
+	first := writeTestBundle(t, "0.1.0", "first")
+	second := writeTestBundle(t, "0.2.0", "second")
+	require.NoError(t, Install(context.Background(), layout.config(first, "0.1.0")))
+	writeOwnedLegacyPluginLink(t, layout)
+	injected := errors.New("injected post-unlink cleanup failure")
+
+	// When
+	err := installWithHooks(context.Background(), layout.config(second, "0.2.0"), hooks{
+		afterLinkRemove: func(path string) error {
+			if path == layout.legacyPluginLink {
+				return injected
+			}
+			return nil
+		},
+	})
+
+	// Then
+	require.ErrorIs(t, err, injected)
+	require.Equal(t, "releases/0.1.0-"+hostTarget(), currentTarget(t, layout.dataRoot))
+	requireOwnedBinaryLink(t, layout)
+	requireOwnedLegacyPluginLink(t, layout)
+	require.NoDirExists(t, filepath.Join(layout.dataRoot, "releases", "0.2.0-"+hostTarget()))
+}
+
 func Test_Install_postswitch_sync_failure_restores_old_pointer(t *testing.T) {
 	// Given
 	layout := newTestLayout(t)

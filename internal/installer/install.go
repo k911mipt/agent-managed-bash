@@ -124,7 +124,7 @@ func installWithHooks(ctx context.Context, config Config, callbacks hooks) (err 
 		paths.legacyPluginLink,
 		pluginTarget,
 		legacyPluginExists,
-		callbacks.beforeLinkCleanup,
+		callbacks,
 	)
 	if cleanupErr == nil {
 		return nil

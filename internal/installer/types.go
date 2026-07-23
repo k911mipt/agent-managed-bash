@@ -57,6 +57,7 @@ type hooks struct {
 	beforeLinkRename      func(string)
 	afterLinkRename       func(string) error
 	beforeLinkCleanup     func(string) error
+	afterLinkRemove       func(string) error
 	beforeReleaseRename   func(string)
 	afterCurrentRename    func() error
 	verifyInstalled       func(context.Context, string, identity) error

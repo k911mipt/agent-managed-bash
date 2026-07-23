@@ -60,12 +60,12 @@ func validateLinkState(path string, target string, expected bool) error {
 	return nil
 }
 
-func removeExpectedLink(path string, target string, expected bool, beforeRemove func(string) error) (bool, error) {
+func removeExpectedLink(path string, target string, expected bool, callbacks hooks) (bool, error) {
 	if err := validateLinkState(path, target, expected); err != nil || !expected {
 		return false, err
 	}
-	if beforeRemove != nil {
-		if err := beforeRemove(path); err != nil {
+	if callbacks.beforeLinkCleanup != nil {
+		if err := callbacks.beforeLinkCleanup(path); err != nil {
 			return false, err
 		}
 	}
@@ -74,6 +74,11 @@ func removeExpectedLink(path string, target string, expected bool, beforeRemove 
 	}
 	if err := os.Remove(path); err != nil {
 		return false, fmt.Errorf("remove registration %q: %w", path, err)
+	}
+	if callbacks.afterLinkRemove != nil {
+		if err := callbacks.afterLinkRemove(path); err != nil {
+			return true, err
+		}
 	}
 	if err := syncDirectory(filepath.Dir(path)); err != nil {
 		return true, err

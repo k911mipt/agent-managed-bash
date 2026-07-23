@@ -71,12 +71,12 @@ func uninstallLocked(paths installPaths, binTarget string, pluginTarget string, 
 		return err
 	}
 	if legacyPluginExists {
-		if _, err := removeExpectedLink(paths.legacyPluginLink, pluginTarget, true, nil); err != nil {
+		if _, err := removeExpectedLink(paths.legacyPluginLink, pluginTarget, true, callbacks); err != nil {
 			return err
 		}
 	}
 	if binExists {
-		if _, err := removeExpectedLink(paths.binLink, binTarget, true, nil); err != nil {
+		if _, err := removeExpectedLink(paths.binLink, binTarget, true, callbacks); err != nil {
 			return err
 		}
 	}
