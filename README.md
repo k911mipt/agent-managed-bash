@@ -13,7 +13,7 @@ The OpenCode plugin exposes one `managed_bash` tool. It does not fall back to Op
 - Go `1.26.5`
 - Bun `1.3.14`
 - `make`
-- OpenCode `1.18.x` for plugin discovery and installed E2E
+- OpenCode `1.18.x` for explicit local plugin loading and installed E2E
 
 The exact Go and Bun versions are pinned in `go.mod` and `.bun-version`.
 
@@ -34,13 +34,31 @@ Build deterministic archives for Linux and macOS on amd64 and arm64:
 SOURCE_DATE_EPOCH=1700000000 make release-package
 ```
 
-The command writes four archives under `dist/`. Choose the archive that matches the operating system and architecture reported by `uname -s` and `uname -m`, then run its installer:
+The command writes four archives under `dist/`. Until packages are published to GitHub Releases, build them from a checkout or transfer the matching archive to the target machine.
+
+### Manual archive installation
+
+Choose the archive from `uname -s` and `uname -m`:
+
+| Host | `uname -s` | `uname -m` | Archive suffix |
+|------|------------|------------|----------------|
+| Apple Silicon Mac | `Darwin` | `arm64` | `darwin-arm64` |
+| Intel Mac | `Darwin` | `x86_64` | `darwin-amd64` |
+| Linux amd64 | `Linux` | `x86_64` | `linux-amd64` |
+| Linux arm64 | `Linux` | `aarch64` or `arm64` | `linux-arm64` |
+
+For example, on an Apple Silicon Mac:
 
 ```sh
-tar -xzf dist/agent-managed-bash-0.1.0-linux-amd64.tar.gz
-cd agent-managed-bash-0.1.0-linux-amd64
+archive=agent-managed-bash-0.1.0-darwin-arm64.tar.gz
+package=${archive##*/}
+directory=${package%.tar.gz}
+tar -xzf "$archive"
+cd "$directory"
 ./install.sh
 ```
+
+If the archive is still under `dist/`, set `archive=dist/agent-managed-bash-0.1.0-darwin-arm64.tar.gz`; the remaining commands stay the same.
 
 The installer uses these per-user paths:
 
@@ -48,9 +66,27 @@ The installer uses these per-user paths:
 |----------|--------------|
 | Releases and `current` pointer | `${XDG_DATA_HOME:-$HOME/.local/share}/agent-managed-bash/` |
 | CLI registration | `${MANAGED_BASH_BIN_DIR:-$HOME/.local/bin}/managed-bash` |
-| OpenCode plugin registration | `${XDG_CONFIG_HOME:-$HOME/.config}/opencode/plugins/managed-bash.js` |
+| OpenCode plugin bundle | `${XDG_DATA_HOME:-$HOME/.local/share}/agent-managed-bash/current/lib/opencode/managed-bash.js` |
 
-Add `$HOME/.local/bin` to `PATH` when it is not already present. Restart OpenCode after an install or update so it loads the plugin and binary from the same release.
+Add `$HOME/.local/bin` to `PATH` when it is not already present. On macOS, put this in `~/.zshrc` and start a new shell:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+The installer does not edit OpenCode configuration. For the default data path, add the local bundle to the `plugin` array in `${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode.jsonc`:
+
+```jsonc
+{
+  "plugin": [
+    "file://{env:HOME}/.local/share/agent-managed-bash/current/lib/opencode/managed-bash.js"
+  ]
+}
+```
+
+When `XDG_DATA_HOME` is set, use the corresponding absolute `file://` URL instead. Restart OpenCode after an install or update so it loads the plugin and binary from the same release.
+
+A future published package can be selected with an npm plugin spec such as `"agent-managed-bash"`. Configure either the local file URL for development or the npm spec for a published release, not both at once.
 
 Check the installed binary:
 
@@ -66,7 +102,7 @@ Uninstall from an extracted archive for the same host:
 ./uninstall.sh
 ```
 
-Uninstall removes installer-owned release and registration paths. It does not inspect or delete `.managed_bash` directories in workspaces, and detached jobs that already started can finish.
+Uninstall removes installer-owned releases, the CLI registration, and any legacy installer-owned auto-discovery symlink. It does not edit OpenCode configuration, so remove the explicit plugin entry separately. It does not inspect or delete `.managed_bash` directories in workspaces, and detached jobs that already started can finish.
 
 ## Selection and compatibility
 
@@ -84,7 +120,7 @@ OpenCode can hide its built-in Bash tool while the plugin retains command permis
 - OpenCode supplies the session ID, physical workspace path, and working directory. Model arguments cannot override them.
 - Stateful requests must match the host-owned context. Cross-workspace reads look like missing jobs, and only the owner session can mutate a job.
 - The runner removes trusted host variables before it starts the requested shell command.
-- The installer rejects symlink-substituted path components, shared writable destinations, regular files at registration paths, and foreign symlinks.
+- The installer rejects symlink-substituted path components, shared writable destinations, foreign CLI registrations, and foreign paths at the legacy auto-discovery location.
 - Install, update, and uninstall share one per-user lock. Release publication and the `current` switch use no-replace or atomic rename operations.
 - Hard timeout, explicit cancellation, and output-limit enforcement terminate the whole process group, including descendants that ignore `SIGTERM`.
 
@@ -103,9 +139,9 @@ Protocol v1 has no restart reattachment. Preserved state does not make a running
 
 - Run `make doctor` when a source build reports a Go or Bun version error.
 - Run `command -v managed-bash` and the version request above when OpenCode reports `runner_transport_error` or `runner_protocol_error`.
-- Run `opencode debug config` and confirm it lists `file://.../opencode/plugins/managed-bash.js` when the tool is absent.
+- Run `opencode debug config` and confirm it lists `file://.../agent-managed-bash/current/lib/opencode/managed-bash.js` when the tool is absent.
 - Restart OpenCode after an update. A process that loaded an older plugin must not pair it with a newer binary.
-- Move or rename a file or foreign symlink that already occupies either registration path. The installer will not overwrite paths it does not own.
+- Move or rename a file or foreign symlink that occupies the CLI registration or legacy auto-discovery path. The installer will not overwrite paths it does not own.
 - Use physical HOME, XDG, workspace, and cwd paths. Symlink traversal fails closed.
 
 ## Root commands
