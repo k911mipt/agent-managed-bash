@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/k911mipt/agent-managed-bash/internal/cli"
+	"github.com/k911mipt/agent-managed-bash/internal/installer"
 	"github.com/k911mipt/agent-managed-bash/internal/runner"
 	"github.com/k911mipt/agent-managed-bash/internal/state"
 )
@@ -21,7 +22,15 @@ func main() {
 func run(args []string, streams cli.Streams) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	handled, err := runner.DispatchInternal(ctx, args)
+	handled, err := installer.Dispatch(ctx, args, binaryVersion)
+	if handled {
+		if err != nil {
+			_, _ = fmt.Fprintf(streams.Stderr, "managed-bash: internal installer failed: %s\n", cli.Diagnostic(err))
+			return int(state.ExitClassInternal)
+		}
+		return int(state.ExitClassSuccess)
+	}
+	handled, err = runner.DispatchInternal(ctx, args)
 	if handled {
 		if err != nil {
 			_, _ = fmt.Fprintf(streams.Stderr, "managed-bash: internal runner failed: %s\n", cli.Diagnostic(err))

@@ -1,3 +1,4 @@
+import { realpath } from "node:fs/promises"
 import type { ProtocolError, Request, Response } from "./generated/protocol.gen"
 import { parseRawJSON } from "./schema-fixture-harness"
 import type { ResponseValidator } from "./response-validator"
@@ -20,13 +21,14 @@ export class CliProtocolError extends Error {
 }
 
 export function createBunCliExecutor(executable = process.env["MANAGED_BASH_BINARY"] ?? "managed-bash"): CliExecutor {
+  const resolvedExecutable = resolveExecutable(executable)
   return {
     async execute(request, signal) {
       if (signal.aborted) {
         throw new DOMException("managed_bash request aborted", "AbortError")
       }
 
-      const child = Bun.spawn([executable, request.action], {
+      const child = Bun.spawn([await resolvedExecutable, request.action], {
         cwd: request.action === "version" ? process.cwd() : request.context.cwd,
         env: trustedEnvironment(request),
         stdin: "pipe",
@@ -56,6 +58,10 @@ export function createBunCliExecutor(executable = process.env["MANAGED_BASH_BINA
       }
     },
   }
+}
+
+async function resolveExecutable(executable: string): Promise<string> {
+  return realpath(Bun.which(executable) ?? executable)
 }
 
 export async function executeProtocolRequest(

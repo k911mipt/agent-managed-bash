@@ -104,7 +104,11 @@ func (manager *Manager) Start(
 	timer := time.NewTimer(manager.config.StartupTimeout)
 	defer timer.Stop()
 	if err := writeFrameBefore(ctx, requestWrite, frameStart, internalRequest, timer.C); err != nil {
-		return generated.JobMetadata{}, manager.stopBootstrapWithWait(command, waited, errors.Join(err, requestWrite.Close(), responseRead.Close()))
+		cause := err
+		if !errors.Is(err, ErrStartupTimeout) && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+			cause = fmt.Errorf("%w: write bootstrap start frame: %w", ErrStartupFailed, err)
+		}
+		return generated.JobMetadata{}, manager.stopBootstrapWithWait(command, waited, errors.Join(cause, requestWrite.Close(), responseRead.Close()))
 	}
 	return startupHandshake{
 		manager: manager, ctx: ctx, request: request, jobID: internalRequest.JobID, command: command, waited: waited,

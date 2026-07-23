@@ -1,19 +1,16 @@
 import { describe, expect, test } from "bun:test"
-import { resolve } from "node:path"
 import type { ToolContext } from "@opencode-ai/plugin"
 import type { CliExecutor } from "./cli-transport"
 import type { Request, Response } from "./generated/protocol.gen"
 import { createManagedBashController } from "./managed-bash-plugin"
 
 const encoder = new TextEncoder()
-const repositoryRoot = resolve(import.meta.dir, "../../..")
 
 describe("managed_bash lifecycle cleanup", () => {
   test("session.deleted cancels only jobs tracked for that session", async () => {
     const calls: Request[] = []
     const controller = await createManagedBashController({
       executor: lifecycleExecutor(calls),
-      repositoryRoot,
     })
 
     await controller.execute({ action: "run", command: "sleep 1" }, toolContext("session-a"))
@@ -41,7 +38,6 @@ describe("managed_bash lifecycle cleanup", () => {
     const calls: Request[] = []
     const controller = await createManagedBashController({
       executor: lifecycleExecutor(calls),
-      repositoryRoot,
     })
 
     await controller.execute({ action: "run", command: "sleep 1" }, toolContext("session-a"))
@@ -76,7 +72,7 @@ describe("managed_bash lifecycle cleanup", () => {
         }
       },
     }
-    const controller = await createManagedBashController({ executor, repositoryRoot })
+    const controller = await createManagedBashController({ executor })
 
     const run = controller.execute({ action: "run", command: "sleep 1" }, toolContext("session-a"))
     await runStarted
@@ -100,7 +96,6 @@ describe("managed_bash lifecycle cleanup", () => {
     })
     const controller = await createManagedBashController({
       executor: lifecycleExecutor(calls),
-      repositoryRoot,
     })
     const context = toolContext("session-a")
     context.ask = async () => {
@@ -193,7 +188,7 @@ function versionResponse(): Extract<Response, { action: "version" }> {
     action: "version",
     result: {
       product: "managed-bash",
-      binary_version: "test",
+      binary_version: "dev",
       protocol_version: 1,
       os: "linux",
       architecture: "amd64",
