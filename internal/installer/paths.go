@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"golang.org/x/sys/unix"
 )
@@ -27,6 +28,9 @@ func preflightLink(path string, ownedTarget string) (bool, error) {
 	if info.Mode()&os.ModeSymlink == 0 {
 		return false, fmt.Errorf("registration %q: %w", path, ErrForeignPath)
 	}
+	if err := validateRegistrationOwner(info); err != nil {
+		return false, fmt.Errorf("registration %q ownership: %w", path, err)
+	}
 	target, err := os.Readlink(path)
 	if err != nil {
 		return false, fmt.Errorf("read registration %q: %w", path, err)
@@ -35,6 +39,14 @@ func preflightLink(path string, ownedTarget string) (bool, error) {
 		return false, fmt.Errorf("registration %q targets %q: %w", path, target, ErrForeignPath)
 	}
 	return true, nil
+}
+
+func validateRegistrationOwner(info os.FileInfo) error {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Uid != uint32(os.Geteuid()) {
+		return ErrForeignPath
+	}
+	return nil
 }
 
 func validateLinkState(path string, target string, expected bool) error {
