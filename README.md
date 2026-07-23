@@ -74,19 +74,26 @@ Add `$HOME/.local/bin` to `PATH` when it is not already present. On macOS, put t
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-The installer does not edit OpenCode configuration. For the default data path, add the local bundle to the `plugin` array in `${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode.jsonc`:
+The installer does not edit OpenCode configuration. Generate a URL for the installed plugin so spaces and URL metacharacters in the data path are encoded correctly:
+
+```sh
+plugin_path="${XDG_DATA_HOME:-$HOME/.local/share}/agent-managed-bash/current/lib/opencode/managed-bash.js"
+PLUGIN_PATH="$plugin_path" bun -e 'import { pathToFileURL } from "node:url"; console.log(pathToFileURL(process.env.PLUGIN_PATH).href)'
+```
+
+Add the printed URL to the `plugin` array in `${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode.jsonc`:
 
 ```jsonc
 {
   "plugin": [
-    "file://{env:HOME}/.local/share/agent-managed-bash/current/lib/opencode/managed-bash.js"
+    "file:///Users/alice/.local/share/agent-managed-bash/current/lib/opencode/managed-bash.js"
   ]
 }
 ```
 
-When `XDG_DATA_HOME` is set, use the corresponding absolute `file://` URL instead. Restart OpenCode after an install or update so it loads the plugin and binary from the same release.
+Restart OpenCode after an install or update so it loads the plugin and binary from the same release.
 
-A future published package can be selected with an npm plugin spec such as `"agent-managed-bash"`. Configure either the local file URL for development or the npm spec for a published release, not both at once.
+A future published package can be selected with the npm plugin spec `"@k911mipt/opencode-agent-managed-bash"`. Configure either the local file URL for development or the npm spec for a published release, not both at once.
 
 Check the installed binary:
 
@@ -94,7 +101,7 @@ Check the installed binary:
 printf '%s' '{"schema_version":1,"action":"version"}' | managed-bash version
 ```
 
-Running `install.sh` again with the same archive is a no-op. An update stages an immutable release and switches the `current` symlink after validation. A failed update restores the previous pointer. The installer keeps previous complete releases for rollback and does not remove them automatically.
+Running `install.sh` again with the same archive is a no-op unless it needs to remove an installer-owned legacy auto-discovery symlink. An update stages an immutable release and switches the `current` symlink after validation. A failed update restores the previous pointer. The installer keeps previous complete releases for rollback and does not remove them automatically.
 
 Uninstall from an extracted archive for the same host:
 
