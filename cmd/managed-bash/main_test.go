@@ -31,3 +31,18 @@ func Test_run_executes_public_version_command(t *testing.T) {
 	require.Equal(t, "managed-bash", response.Result.Product)
 	require.Equal(t, binaryVersion, response.Result.BinaryVersion)
 }
+
+func Test_run_handles_hidden_install_before_public_cli(t *testing.T) {
+	// Given
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	streams := cli.Streams{Stdin: &bytes.Buffer{}, Stdout: &stdout, Stderr: &stderr}
+
+	// When
+	exitCode := run([]string{"--managed-bash-internal=install"}, streams)
+
+	// Then
+	require.Equal(t, 5, exitCode)
+	require.Empty(t, stdout.String())
+	require.Contains(t, stderr.String(), "internal installer failed")
+}
