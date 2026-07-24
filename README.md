@@ -193,6 +193,8 @@ make cli-build
 
 Every action reads one protocol-v1 JSON request from stdin and writes one schema-valid JSON response plus a newline to stdout. Diagnostics use stderr. The public actions are `run`, `wait`, `status`, `output`, `cancel`, `remove`, `list`, and `version`; command text is accepted only inside the `run` request body.
 
+Action subcommands fail immediately with usage guidance when stdin is a terminal; pipe or redirect the JSON request instead of invoking `managed-bash list` or another action interactively. Validation responses may include bounded `field`, `reason`, `expected`, and `actual` details, which the OpenCode plugin renders after the stable error code and message.
+
 `version` does not require runner initialization or trusted host context:
 
 ```sh
