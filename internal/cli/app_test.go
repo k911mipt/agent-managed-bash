@@ -119,6 +119,27 @@ func Test_Application_help_prints_usage_without_reading_stdin(t *testing.T) {
 	require.Empty(t, stderr.String())
 }
 
+func Test_Application_rejects_terminal_stdin_without_reading_request(t *testing.T) {
+	// Given
+	application, err := New(Config{BinaryVersion: "dev"})
+	require.NoError(t, err)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	streams := Streams{
+		Stdin: strings.NewReader(`{"schema_version":1,"action":"list"}`), Stdout: &stdout, Stderr: &stderr,
+		StdinIsTerminal: true,
+	}
+
+	// When
+	exitCode := application.Execute(context.Background(), []string{"list"}, streams)
+
+	// Then
+	require.Equal(t, 2, exitCode)
+	require.Empty(t, stdout.String())
+	require.Contains(t, stderr.String(), "requires a JSON request on stdin")
+	require.Contains(t, stderr.String(), usage)
+}
+
 func Test_Application_accepts_schema_version_numeric_integer_forms(t *testing.T) {
 	for _, version := range []string{"1.0", "1e0"} {
 		t.Run(version, func(t *testing.T) {
