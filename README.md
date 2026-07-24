@@ -34,7 +34,24 @@ Build deterministic archives for Linux and macOS on amd64 and arm64:
 SOURCE_DATE_EPOCH=1700000000 make release-package
 ```
 
-The command writes four archives under `dist/`.
+The command writes four archives under `dist/`. Before a private GitHub Release exists, build them from a checkout or transfer the matching archive to the target machine.
+
+Repository readers can download a private release with an authenticated GitHub CLI:
+
+```sh
+gh auth status
+gh release download v0.1.0 \
+  --repo k911mipt/agent-managed-bash \
+  --pattern 'agent-managed-bash-*.tar.gz' \
+  --pattern SHA256SUMS
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256sum -c SHA256SUMS
+else
+  shasum -a 256 -c SHA256SUMS
+fi
+```
+
+Select and install only the archive matching the target host. Private release downloads require repository access and GitHub authentication. Public token-free downloads are deferred to issue #11.
 
 ### Manual archive installation
 
@@ -156,7 +173,7 @@ Reproduce release bytes locally from the tagged commit with:
 SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD) make release-package
 ```
 
-Validate the checked-in workflow contract with `make workflow-test`. Required checks that block merges into the default branch remain deferred to issue #11.
+Validate the checked-in workflow contract with `make workflow-test`. On GitHub Free, a private repository owned by an account without a valid payment method stops running jobs when the included Actions quota is exhausted, so no paid overage or separate budget mutation is possible. The private setup conserves that quota by keeping routine pull-request and `master` verification on Linux amd64 and running the full four-platform matrix only for release tags. After the repository becomes public, issue #11 expands regular CI to the full supported matrix and adds required checks plus public token-free distribution.
 
 ## Troubleshooting
 
