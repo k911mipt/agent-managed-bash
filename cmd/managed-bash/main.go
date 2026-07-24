@@ -16,7 +16,9 @@ import (
 var binaryVersion = "dev"
 
 func main() {
-	os.Exit(run(os.Args[1:], cli.Streams{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}))
+	os.Exit(run(os.Args[1:], cli.Streams{
+		Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, StdinIsTerminal: stdinIsTerminal(os.Stdin),
+	}))
 }
 
 func run(args []string, streams cli.Streams) int {
