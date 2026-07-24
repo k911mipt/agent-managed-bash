@@ -5,7 +5,7 @@ import type { Request, TrustedContext } from "./generated/protocol.gen"
 export function trustedContextFor(context: ToolContext): TrustedContext {
   return {
     session_id: context.sessionID,
-    workspace_path: context.worktree,
+    workspace_path: context.worktree === "/" ? context.directory : context.worktree,
     cwd: context.directory,
   }
 }

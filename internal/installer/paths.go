@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"golang.org/x/sys/unix"
 )
@@ -27,12 +28,60 @@ func preflightLink(path string, ownedTarget string) (bool, error) {
 	if info.Mode()&os.ModeSymlink == 0 {
 		return false, fmt.Errorf("registration %q: %w", path, ErrForeignPath)
 	}
+	if err := validateRegistrationOwner(info); err != nil {
+		return false, fmt.Errorf("registration %q ownership: %w", path, err)
+	}
 	target, err := os.Readlink(path)
 	if err != nil {
 		return false, fmt.Errorf("read registration %q: %w", path, err)
 	}
 	if target != ownedTarget {
 		return false, fmt.Errorf("registration %q targets %q: %w", path, target, ErrForeignPath)
+	}
+	return true, nil
+}
+
+func validateRegistrationOwner(info os.FileInfo) error {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Uid != uint32(os.Geteuid()) {
+		return ErrForeignPath
+	}
+	return nil
+}
+
+func validateLinkState(path string, target string, expected bool) error {
+	exists, err := preflightLink(path, target)
+	if err != nil {
+		return err
+	}
+	if exists != expected {
+		return fmt.Errorf("registration %q changed during operation: %w", path, ErrForeignPath)
+	}
+	return nil
+}
+
+func removeExpectedLink(path string, target string, expected bool, callbacks hooks) (bool, error) {
+	if err := validateLinkState(path, target, expected); err != nil || !expected {
+		return false, err
+	}
+	if callbacks.beforeLinkCleanup != nil {
+		if err := callbacks.beforeLinkCleanup(path); err != nil {
+			return false, err
+		}
+	}
+	if err := validateLinkState(path, target, true); err != nil {
+		return false, err
+	}
+	if err := os.Remove(path); err != nil {
+		return false, fmt.Errorf("remove registration %q: %w", path, err)
+	}
+	if callbacks.afterLinkRemove != nil {
+		if err := callbacks.afterLinkRemove(path); err != nil {
+			return true, err
+		}
+	}
+	if err := syncDirectory(filepath.Dir(path)); err != nil {
+		return true, err
 	}
 	return true, nil
 }

@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_Install_publishes_fresh_release_and_owned_registrations(t *testing.T) {
+func Test_Install_publishes_fresh_release_and_binary_registration(t *testing.T) {
 	// Given
 	layout := newTestLayout(t)
 	bundle := writeTestBundle(t, "0.1.0", "first")
@@ -23,7 +23,8 @@ func Test_Install_publishes_fresh_release_and_owned_registrations(t *testing.T) 
 	// Then
 	require.NoError(t, err)
 	require.Equal(t, "releases/0.1.0-"+hostTarget(), currentTarget(t, layout.dataRoot))
-	requireOwnedLinks(t, layout)
+	requireOwnedBinaryLink(t, layout)
+	require.NoFileExists(t, layout.legacyPluginLink)
 	releaseRoot := filepath.Join(layout.dataRoot, currentTarget(t, layout.dataRoot))
 	require.FileExists(t, filepath.Join(releaseRoot, "bin", "managed-bash"))
 	require.FileExists(t, filepath.Join(releaseRoot, "lib", "opencode", "managed-bash.js"))
@@ -50,6 +51,21 @@ func Test_Install_identical_reinstall_is_pointer_noop(t *testing.T) {
 	require.True(t, os.SameFile(before, after))
 }
 
+func Test_Install_identical_reinstall_removes_owned_legacy_plugin_registration(t *testing.T) {
+	// Given
+	layout := newTestLayout(t)
+	bundle := writeTestBundle(t, "0.1.0", "same")
+	require.NoError(t, Install(context.Background(), layout.config(bundle, "0.1.0")))
+	writeOwnedLegacyPluginLink(t, layout)
+
+	// When
+	err := Install(context.Background(), layout.config(bundle, "0.1.0"))
+
+	// Then
+	require.NoError(t, err)
+	require.NoFileExists(t, layout.legacyPluginLink)
+}
+
 func Test_Install_update_switches_only_current_pointer(t *testing.T) {
 	// Given
 	layout := newTestLayout(t)
@@ -57,8 +73,6 @@ func Test_Install_update_switches_only_current_pointer(t *testing.T) {
 	second := writeTestBundle(t, "0.2.0", "second")
 	require.NoError(t, Install(context.Background(), layout.config(first, "0.1.0")))
 	binBefore, err := os.Lstat(layout.binLink)
-	require.NoError(t, err)
-	pluginBefore, err := os.Lstat(layout.pluginLink)
 	require.NoError(t, err)
 
 	// When
@@ -69,10 +83,8 @@ func Test_Install_update_switches_only_current_pointer(t *testing.T) {
 	require.Equal(t, "releases/0.2.0-"+hostTarget(), currentTarget(t, layout.dataRoot))
 	binAfter, err := os.Lstat(layout.binLink)
 	require.NoError(t, err)
-	pluginAfter, err := os.Lstat(layout.pluginLink)
-	require.NoError(t, err)
 	require.True(t, os.SameFile(binBefore, binAfter))
-	require.True(t, os.SameFile(pluginBefore, pluginAfter))
+	require.NoFileExists(t, layout.legacyPluginLink)
 }
 
 func Test_Install_precommit_failure_keeps_old_pointer(t *testing.T) {
@@ -100,6 +112,7 @@ func Test_Install_postswitch_verification_failure_restores_old_pointer(t *testin
 	first := writeTestBundle(t, "0.1.0", "first")
 	second := writeTestBundle(t, "0.2.0", "second")
 	require.NoError(t, Install(context.Background(), layout.config(first, "0.1.0")))
+	writeOwnedLegacyPluginLink(t, layout)
 	injected := errors.New("injected installed verification failure")
 
 	// When
@@ -110,6 +123,61 @@ func Test_Install_postswitch_verification_failure_restores_old_pointer(t *testin
 	// Then
 	require.ErrorIs(t, err, injected)
 	require.Equal(t, "releases/0.1.0-"+hostTarget(), currentTarget(t, layout.dataRoot))
+	requireOwnedLegacyPluginLink(t, layout)
+	require.NoDirExists(t, filepath.Join(layout.dataRoot, "releases", "0.2.0-"+hostTarget()))
+}
+
+func Test_Install_legacy_cleanup_failure_restores_old_pointer(t *testing.T) {
+	// Given
+	layout := newTestLayout(t)
+	first := writeTestBundle(t, "0.1.0", "first")
+	second := writeTestBundle(t, "0.2.0", "second")
+	require.NoError(t, Install(context.Background(), layout.config(first, "0.1.0")))
+	writeOwnedLegacyPluginLink(t, layout)
+	pluginDirectory := filepath.Dir(layout.legacyPluginLink)
+	t.Cleanup(func() { require.NoError(t, os.Chmod(pluginDirectory, 0o755)) })
+
+	// When
+	err := installWithHooks(context.Background(), layout.config(second, "0.2.0"), hooks{
+		beforeLinkCleanup: func(path string) error {
+			if path == layout.legacyPluginLink {
+				return os.Chmod(pluginDirectory, 0o555)
+			}
+			return nil
+		},
+	})
+
+	// Then
+	require.Error(t, err)
+	require.Equal(t, "releases/0.1.0-"+hostTarget(), currentTarget(t, layout.dataRoot))
+	requireOwnedLegacyPluginLink(t, layout)
+	require.NoDirExists(t, filepath.Join(layout.dataRoot, "releases", "0.2.0-"+hostTarget()))
+}
+
+func Test_Install_postunlink_cleanup_failure_restores_legacy_link(t *testing.T) {
+	// Given
+	layout := newTestLayout(t)
+	first := writeTestBundle(t, "0.1.0", "first")
+	second := writeTestBundle(t, "0.2.0", "second")
+	require.NoError(t, Install(context.Background(), layout.config(first, "0.1.0")))
+	writeOwnedLegacyPluginLink(t, layout)
+	injected := errors.New("injected post-unlink cleanup failure")
+
+	// When
+	err := installWithHooks(context.Background(), layout.config(second, "0.2.0"), hooks{
+		afterLinkRemove: func(path string) error {
+			if path == layout.legacyPluginLink {
+				return injected
+			}
+			return nil
+		},
+	})
+
+	// Then
+	require.ErrorIs(t, err, injected)
+	require.Equal(t, "releases/0.1.0-"+hostTarget(), currentTarget(t, layout.dataRoot))
+	requireOwnedBinaryLink(t, layout)
+	requireOwnedLegacyPluginLink(t, layout)
 	require.NoDirExists(t, filepath.Join(layout.dataRoot, "releases", "0.2.0-"+hostTarget()))
 }
 
@@ -147,7 +215,7 @@ func Test_Install_initial_postswitch_sync_failure_removes_visible_state(t *testi
 	require.ErrorIs(t, err, injected)
 	require.NoFileExists(t, filepath.Join(layout.dataRoot, "current"))
 	require.NoFileExists(t, layout.binLink)
-	require.NoFileExists(t, layout.pluginLink)
+	require.NoFileExists(t, layout.legacyPluginLink)
 }
 
 func Test_Install_verifies_prepared_release_binary_instead_of_bundle_source(t *testing.T) {

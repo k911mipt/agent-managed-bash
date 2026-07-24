@@ -15,16 +15,18 @@ const positiveInteger = tool.schema.number().int().positive()
 const nonNegativeInteger = tool.schema.number().int().nonnegative()
 
 export const managedBashToolArgs = {
-  action,
-  command: tool.schema.string().min(1).optional(),
-  hard_timeout_ms: positiveInteger.optional(),
-  output_limit_bytes: positiveInteger.optional(),
-  job_id: jobID.optional(),
-  cursor_bytes: nonNegativeInteger.optional(),
-  timeout_ms: positiveInteger.optional(),
-  idle_timeout_ms: positiveInteger.optional(),
-  start_cursor_bytes: nonNegativeInteger.optional(),
-  end_cursor_bytes: nonNegativeInteger.optional(),
+  action: action.describe("Operation to perform."),
+  command: tool.schema.string().min(1).optional().describe("[run only] Non-interactive shell command to start."),
+  hard_timeout_ms: positiveInteger.optional().describe("[run only] Terminate the process group after this duration."),
+  output_limit_bytes: positiveInteger.optional().describe("[run only] Terminate the process group at this capture limit."),
+  job_id: jobID.optional().describe("[wait/status/output/cancel/remove only] Existing job identifier."),
+  cursor_bytes: nonNegativeInteger.optional().describe("[wait only] Output cursor to continue observing from."),
+  timeout_ms: positiveInteger.optional().describe("[wait only] Return control after this total observation duration."),
+  idle_timeout_ms: positiveInteger
+    .optional()
+    .describe("[wait only] Return control after no new output for this duration; does not terminate the job."),
+  start_cursor_bytes: nonNegativeInteger.optional().describe("[output only] Inclusive output cursor."),
+  end_cursor_bytes: nonNegativeInteger.optional().describe("[output only] Exclusive output cursor."),
 } as const
 
 export const managedBashActionSchema = tool.schema.discriminatedUnion("action", [

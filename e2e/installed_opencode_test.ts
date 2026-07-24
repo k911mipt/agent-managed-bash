@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { pathToFileURL } from "node:url"
 
 type JSONRecord = Record<string, unknown>
 
@@ -54,6 +55,7 @@ async function runScenario(name: string, missingBinary: boolean): Promise<void> 
   }
   delete env["MANAGED_BASH_BINARY"]
   await run(["sh", join(bundleRoot, "install.sh")], env, scenarioRoot)
+  requireCondition(!(await Bun.file(join(configHome, "opencode", "plugins", "managed-bash.js")).exists()), `${name}: installer created an auto-discovery plugin`)
   await run(["git", "init", "--quiet", "--separate-git-dir", join(scenarioRoot, "git-dir"), workspace], env, scenarioRoot)
 
   let requestCount = 0
@@ -81,7 +83,7 @@ async function runScenario(name: string, missingBinary: boolean): Promise<void> 
   try {
     const serverPort = server.port
     if (serverPort === undefined) throw new TypeError("fixture server did not bind a TCP port")
-    await writeConfig(configHome, serverPort)
+    await writeConfig(configHome, dataHome, serverPort)
     const runEnv = missingBinary
       ? { ...env, MANAGED_BASH_BINARY: join(scenarioRoot, "missing-managed-bash") }
       : env
@@ -176,7 +178,7 @@ function openAIResponse(value: JSONRecord): Response {
   })
 }
 
-async function writeConfig(configHome: string, port: number): Promise<void> {
+async function writeConfig(configHome: string, dataHome: string, port: number): Promise<void> {
   const directory = join(configHome, "opencode")
   await mkdir(directory, { recursive: true })
   const config = {
@@ -184,6 +186,7 @@ async function writeConfig(configHome: string, port: number): Promise<void> {
     autoupdate: false,
     share: "disabled",
     snapshot: false,
+    plugin: [pathToFileURL(join(dataHome, "agent-managed-bash", "current", "lib", "opencode", "managed-bash.js")).href],
     tools: { bash: false },
     provider: {
       e2e: {

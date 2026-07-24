@@ -33,13 +33,13 @@ type identity struct {
 }
 
 type installPaths struct {
-	dataHome   string
-	dataRoot   string
-	releases   string
-	current    string
-	lock       string
-	binLink    string
-	pluginLink string
+	dataHome         string
+	dataRoot         string
+	releases         string
+	current          string
+	lock             string
+	binLink          string
+	legacyPluginLink string
 }
 
 type currentPointer struct {
@@ -48,18 +48,19 @@ type currentPointer struct {
 }
 
 type hooks struct {
-	beforeLock          func()
-	afterLock           func()
-	afterLockOpen       func(int)
-	beforeLockUnlink    func()
-	beforeCommit        func() error
-	beforePluginLink    func() error
-	beforeLinkRename    func(string)
-	afterLinkRename     func(string) error
-	beforeLinkCleanup   func(string) error
-	beforeReleaseRename func(string)
-	afterCurrentRename  func() error
-	verifyInstalled     func(context.Context, string, identity) error
+	beforeLock            func()
+	afterLock             func()
+	afterLockOpen         func(int)
+	beforeLockUnlink      func()
+	beforeUninstallCommit func()
+	beforeCommit          func() error
+	beforeLinkRename      func(string)
+	afterLinkRename       func(string) error
+	beforeLinkCleanup     func(string) error
+	afterLinkRemove       func(string) error
+	beforeReleaseRename   func(string)
+	afterCurrentRename    func() error
+	verifyInstalled       func(context.Context, string, identity) error
 }
 
 func pathsFromConfig(config Config) (installPaths, error) {
@@ -86,10 +87,10 @@ func pathsFromConfig(config Config) (installPaths, error) {
 	paths := installPaths{
 		dataHome: dataHome, dataRoot: dataRoot, releases: filepath.Join(dataRoot, "releases"),
 		current: filepath.Join(dataRoot, "current"), lock: filepath.Join(dataHome, ".agent-managed-bash.install.lock"),
-		binLink:    filepath.Join(binDir, "managed-bash"),
-		pluginLink: filepath.Join(configHome, "opencode", "plugins", "managed-bash.js"),
+		binLink:          filepath.Join(binDir, "managed-bash"),
+		legacyPluginLink: filepath.Join(configHome, "opencode", "plugins", "managed-bash.js"),
 	}
-	for name, path := range map[string]string{"binary registration": paths.binLink, "plugin registration": paths.pluginLink} {
+	for name, path := range map[string]string{"binary registration": paths.binLink, "legacy plugin registration": paths.legacyPluginLink} {
 		if pathInside(dataRoot, path) {
 			return installPaths{}, fmt.Errorf("%s is inside installation data root: %w", name, ErrUnsafePath)
 		}

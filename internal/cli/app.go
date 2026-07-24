@@ -18,9 +18,10 @@ type Config struct {
 }
 
 type Streams struct {
-	Stdin  io.Reader
-	Stdout io.Writer
-	Stderr io.Writer
+	Stdin           io.Reader
+	Stdout          io.Writer
+	Stderr          io.Writer
+	StdinIsTerminal bool
 }
 
 type Application struct {
@@ -53,6 +54,11 @@ func (application *Application) Execute(ctx context.Context, args []string, stre
 	}
 	action, ok := parseAction(args)
 	if !ok {
+		_, _ = fmt.Fprintln(streams.Stderr, usage)
+		return int(generated.ExitClass(2))
+	}
+	if streams.StdinIsTerminal {
+		_, _ = fmt.Fprintf(streams.Stderr, "managed-bash: action=%s requires a JSON request on stdin; pipe or redirect one instead of running interactively\n", action)
 		_, _ = fmt.Fprintln(streams.Stderr, usage)
 		return int(generated.ExitClass(2))
 	}

@@ -61,13 +61,15 @@ env $install_env sh "$stage/$native_name/install.sh"
 installed="$install_bin/managed-bash"
 data_root="$install_data/agent-managed-bash"
 test -L "$installed"
-test -L "$install_config/opencode/plugins/managed-bash.js"
+test ! -e "$install_config/opencode/plugins/managed-bash.js"
 test "$(readlink "$installed")" = "$data_root/current/bin/managed-bash"
-test "$(readlink "$install_config/opencode/plugins/managed-bash.js")" = "$data_root/current/lib/opencode/managed-bash.js"
 test "$(readlink "$data_root/current")" = "releases/$version-$native_os-$native_arch"
 set -- $(ls -di "$data_root/current")
 current_inode=$1
+mkdir -p "$install_config/opencode/plugins"
+ln -s "$data_root/current/lib/opencode/managed-bash.js" "$install_config/opencode/plugins/managed-bash.js"
 env $install_env sh "$stage/$native_name/install.sh"
+test ! -e "$install_config/opencode/plugins/managed-bash.js"
 set -- $(ls -di "$data_root/current")
 test "$current_inode" = "$1"
 

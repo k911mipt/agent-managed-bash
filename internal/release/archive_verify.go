@@ -27,6 +27,9 @@ func verifyArchive(input io.Reader, expected expectation) error {
 	if err != nil {
 		return err
 	}
+	if _, err := io.Copy(io.Discard, gzipReader); err != nil {
+		return fmt.Errorf("finish gzip stream: %w: %w", err, ErrInvalidArchive)
+	}
 	if err := gzipReader.Close(); err != nil {
 		return fmt.Errorf("close gzip: %w: %w", err, ErrInvalidArchive)
 	}

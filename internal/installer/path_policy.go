@@ -21,6 +21,9 @@ func validatePathComponents(path string) error {
 		current = filepath.Join(current, component)
 		info, err := os.Lstat(current)
 		if errors.Is(err, os.ErrNotExist) {
+			if insideSharedSticky {
+				return fmt.Errorf("missing component %q below shared sticky directory: %w", current, ErrUnsafePath)
+			}
 			return nil
 		}
 		if err != nil {
@@ -41,7 +44,14 @@ func validatePathComponents(path string) error {
 		if sharedWritable && !sticky {
 			return fmt.Errorf("component %q is shared-writable: %w", current, ErrUnsafePath)
 		}
-		insideSharedSticky = insideSharedSticky || sharedWritable && sticky
+		if sharedWritable && sticky {
+			insideSharedSticky = true
+		} else if stat.Uid == uint32(os.Geteuid()) {
+			insideSharedSticky = false
+		}
+	}
+	if insideSharedSticky {
+		return fmt.Errorf("path %q ends in a shared sticky directory: %w", path, ErrUnsafePath)
 	}
 	return nil
 }

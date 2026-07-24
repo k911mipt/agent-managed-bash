@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { pathToFileURL } from "node:url"
 import {
   extractJobIDs,
   openAIResponse,
@@ -49,6 +50,7 @@ try {
     mkdir(env["XDG_STATE_HOME"] ?? "", { recursive: true }),
   ])
   await runProcess(["sh", join(bundleRoot, "install.sh")], env, root)
+  requireCondition(!(await Bun.file(join(configHome, "opencode", "plugins", "managed-bash.js")).exists()), "installer created an auto-discovery plugin")
   await parallelCancelScenario()
   await hardTimeoutScenario()
   await cursorScenario()
@@ -167,6 +169,7 @@ async function writeConfig(port: number, commands: readonly string[]): Promise<v
   for (const command of commands) permissions[command] = "allow"
   const config = {
     $schema: "https://opencode.ai/config.json", autoupdate: false, share: "disabled", snapshot: false,
+    plugin: [pathToFileURL(join(dataHome, "agent-managed-bash", "current", "lib", "opencode", "managed-bash.js")).href],
     tools: { bash: false },
     provider: { e2e: { npm: "@ai-sdk/openai-compatible", name: "E2E fixture", options: { apiKey: "fixture-key", baseURL: `http://127.0.0.1:${port}/v1` }, models: { fixture: { name: "Fixture", limit: { context: 8192, output: 2048 } } } } },
     agent: { e2e: { description: "Installed controls E2E", mode: "primary", model: "e2e/fixture", tools: { bash: false, managed_bash: true }, permission: { bash: permissions } } },

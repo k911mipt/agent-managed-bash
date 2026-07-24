@@ -43,11 +43,11 @@ type testBundleOptions struct {
 }
 
 type testLayout struct {
-	home        string
-	dataRoot    string
-	binLink     string
-	pluginLink  string
-	environment map[string]string
+	home             string
+	dataRoot         string
+	binLink          string
+	legacyPluginLink string
+	environment      map[string]string
 }
 
 func newTestLayout(t *testing.T) testLayout {
@@ -68,8 +68,8 @@ func newTestLayout(t *testing.T) testLayout {
 	require.NoError(t, os.Mkdir(home, 0o755))
 	return testLayout{
 		home: home, dataRoot: filepath.Join(dataHome, "agent-managed-bash"),
-		binLink:    filepath.Join(binDir, "managed-bash"),
-		pluginLink: filepath.Join(configHome, "opencode", "plugins", "managed-bash.js"),
+		binLink:          filepath.Join(binDir, "managed-bash"),
+		legacyPluginLink: filepath.Join(configHome, "opencode", "plugins", "managed-bash.js"),
 		environment: map[string]string{
 			"HOME": home, "XDG_DATA_HOME": dataHome, "XDG_CONFIG_HOME": configHome, "MANAGED_BASH_BIN_DIR": binDir,
 		},
@@ -146,12 +146,25 @@ func currentTarget(t *testing.T, dataRoot string) string {
 	return target
 }
 
-func requireOwnedLinks(t *testing.T, layout testLayout) {
+func requireOwnedBinaryLink(t *testing.T, layout testLayout) {
 	t.Helper()
 	binTarget, err := os.Readlink(layout.binLink)
 	require.NoError(t, err)
-	pluginTarget, err := os.Readlink(layout.pluginLink)
-	require.NoError(t, err)
 	require.Equal(t, filepath.Join(layout.dataRoot, "current", "bin", "managed-bash"), binTarget)
-	require.Equal(t, filepath.Join(layout.dataRoot, "current", "lib", "opencode", "managed-bash.js"), pluginTarget)
+}
+
+func writeOwnedLegacyPluginLink(t *testing.T, layout testLayout) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(filepath.Dir(layout.legacyPluginLink), 0o755))
+	require.NoError(t, os.Symlink(
+		filepath.Join(layout.dataRoot, "current", "lib", "opencode", "managed-bash.js"),
+		layout.legacyPluginLink,
+	))
+}
+
+func requireOwnedLegacyPluginLink(t *testing.T, layout testLayout) {
+	t.Helper()
+	target, err := os.Readlink(layout.legacyPluginLink)
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(layout.dataRoot, "current", "lib", "opencode", "managed-bash.js"), target)
 }
