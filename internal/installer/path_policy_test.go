@@ -43,6 +43,32 @@ func Test_Install_accepts_missing_config_home_below_owned_private_anchor(t *test
 	require.NoError(t, err)
 }
 
+func Test_Install_rejects_existing_config_home_exposed_by_shared_sticky_mode(t *testing.T) {
+	// Given
+	layout := newTestLayout(t)
+	bundle := writeTestBundle(t, "0.1.0", "first")
+	configHome := filepath.Join(physicalTempDir(t), "config")
+	pluginDirectory := filepath.Join(configHome, "opencode", "plugins")
+	require.NoError(t, os.MkdirAll(pluginDirectory, 0o700))
+	for _, directory := range []string{configHome, filepath.Join(configHome, "opencode"), pluginDirectory} {
+		require.NoError(t, os.Chmod(directory, 0o777|os.ModeSticky))
+	}
+	layout.environment["XDG_CONFIG_HOME"] = configHome
+	legacyLink := filepath.Join(pluginDirectory, "managed-bash.js")
+	wantTarget := filepath.Join(layout.dataRoot, "current", "lib", "opencode", "managed-bash.js")
+	require.NoError(t, os.Symlink(wantTarget, legacyLink))
+
+	// When
+	err := Install(context.Background(), layout.config(bundle, "0.1.0"))
+
+	// Then
+	require.ErrorIs(t, err, ErrUnsafePath)
+	target, readErr := os.Readlink(legacyLink)
+	require.NoError(t, readErr)
+	require.Equal(t, wantTarget, target)
+	require.NoDirExists(t, layout.dataRoot)
+}
+
 func Test_ValidateRegistrationOwner_rejects_different_user(t *testing.T) {
 	// Given
 	path := filepath.Join(t.TempDir(), "registration")

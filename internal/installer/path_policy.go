@@ -50,6 +50,9 @@ func validatePathComponents(path string) error {
 			insideSharedSticky = false
 		}
 	}
+	if insideSharedSticky {
+		return fmt.Errorf("path %q ends in a shared sticky directory: %w", path, ErrUnsafePath)
+	}
 	return nil
 }
 
