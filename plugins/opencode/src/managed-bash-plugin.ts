@@ -248,7 +248,7 @@ export async function createManagedBashController(
 
 export function createManagedBashTool(controller: ManagedBashController): ToolDefinition {
   return tool({
-    description: "Run and observe cancellable managed shell jobs.",
+    description: "Run and observe cancellable managed shell jobs. run starts jobs; wait owns observation timeouts.",
     args: managedBashToolArgs,
     execute: (input, context) => controller.execute(input, context),
   })
