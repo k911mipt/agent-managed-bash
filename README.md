@@ -140,6 +140,8 @@ OpenCode can hide its built-in Bash tool while the plugin retains command permis
 | Hard timeout | 2 hours |
 | Captured output limit | 100 MiB |
 
+`hard_timeout_ms` and `output_limit_bytes` configure `run`. `timeout_ms` and `idle_timeout_ms` configure the observational `wait`; neither wait timeout terminates the job.
+
 Protocol v1 has no restart reattachment. Preserved state does not make a running job reattachable after the runner or host restarts. The package command builds local archives only; GitHub Releases and CI publishing are outside this repository target. The installer supports per-user Linux and macOS installs, not privileged system-wide installs.
 
 ## Troubleshooting
