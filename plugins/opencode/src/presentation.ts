@@ -1,11 +1,12 @@
 import type { ToolResult } from "@opencode-ai/plugin"
-import type { JobObservation, OutputChunk, Response } from "./generated/protocol.gen"
+import type { ErrorDetails, JobObservation, OutputChunk, Response } from "./generated/protocol.gen"
 
 const responseLineLimit = 200
+const errorDetailValueLimit = 256
 
 export function formatProtocolResponse(response: Response): ToolResult {
   if (!response.ok) {
-    return formatToolError(response.error.code, response.error.message)
+    return formatToolError(response.error.code, response.error.message, response.error.details)
   }
 
   switch (response.action) {
@@ -30,12 +31,35 @@ export function formatProtocolResponse(response: Response): ToolResult {
   }
 }
 
-export function formatToolError(code: string, message: string): ToolResult {
+export function formatToolError(code: string, message: string, details?: ErrorDetails): ToolResult {
   return {
     title: "managed_bash error",
-    output: `${code}: ${message}`,
+    output: `${code}: ${message}${formatErrorDetails(details)}`,
     metadata: { code },
   }
+}
+
+function formatErrorDetails(details: ErrorDetails | undefined): string {
+  if (details === undefined) {
+    return ""
+  }
+  const values = [
+    detailEntry("field", details.field),
+    detailEntry("reason", details.reason),
+    detailEntry("expected", details.expected),
+    detailEntry("actual", details.actual),
+  ].filter((entry) => entry !== undefined)
+  return values.length === 0 ? "" : ` (${values.join("; ")})`
+}
+
+function detailEntry(name: string, value: string | undefined): string | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+  const normalized = value.replace(/[\u0000-\u001f\u007f-\u009f\s]+/g, " ").trim()
+  const runes = Array.from(normalized)
+  const bounded = runes.length <= errorDetailValueLimit ? normalized : `${runes.slice(0, errorDetailValueLimit - 1).join("")}…`
+  return `${name}=${bounded}`
 }
 
 function result(output: string): ToolResult {

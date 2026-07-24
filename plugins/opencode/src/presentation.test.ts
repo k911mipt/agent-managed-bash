@@ -53,6 +53,37 @@ test("preserves exactly 200 newline-terminated output lines", () => {
   expect(result.output).not.toContain("earlier lines omitted")
 })
 
+test("renders protocol error details in a fixed safe order", () => {
+  // Given
+  const response = {
+    schema_version: 1,
+    ok: false,
+    action: "list",
+    error: {
+      code: "invalid_request",
+      message: "request is invalid",
+      details: {
+        actual: "/\n\u0000",
+        expected: "physical canonical workspace directory other than /",
+        reason: "trusted context rejected",
+        field: "context.workspace_path",
+      },
+    },
+  } satisfies Response
+
+  // When
+  const result = formatProtocolResponse(response)
+
+  // Then
+  expect(typeof result).toBe("object")
+  if (typeof result === "string") {
+    throw new TypeError("expected structured tool result")
+  }
+  expect(result.output).toBe(
+    "invalid_request: request is invalid (field=context.workspace_path; reason=trusted context rejected; expected=physical canonical workspace directory other than /; actual=/)",
+  )
+})
+
 function waitResponse(text: string): Response {
   return {
     schema_version: 1,
