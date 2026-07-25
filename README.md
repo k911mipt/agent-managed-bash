@@ -34,7 +34,24 @@ Build deterministic archives for Linux and macOS on amd64 and arm64:
 SOURCE_DATE_EPOCH=1700000000 make release-package
 ```
 
-The command writes four archives under `dist/`. Until packages are published to GitHub Releases, build them from a checkout or transfer the matching archive to the target machine.
+The command writes four archives under `dist/`. Before a private GitHub Release exists, build them from a checkout or transfer the matching archive to the target machine.
+
+Repository readers can download a private release with an authenticated GitHub CLI:
+
+```sh
+gh auth status
+gh release download v0.1.0 \
+  --repo k911mipt/agent-managed-bash \
+  --pattern 'agent-managed-bash-*.tar.gz' \
+  --pattern SHA256SUMS
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256sum -c SHA256SUMS
+else
+  shasum -a 256 -c SHA256SUMS
+fi
+```
+
+Select and install only the archive matching the target host. Private release downloads require repository access and GitHub authentication. Public token-free downloads are deferred to issue #11.
 
 ### Manual archive installation
 
@@ -142,7 +159,21 @@ OpenCode can hide its built-in Bash tool while the plugin retains command permis
 
 `hard_timeout_ms` and `output_limit_bytes` configure `run`. `timeout_ms` and `idle_timeout_ms` configure the observational `wait`; neither wait timeout terminates the job.
 
-Protocol v1 has no restart reattachment. Preserved state does not make a running job reattachable after the runner or host restarts. The package command builds local archives only; GitHub Releases and CI publishing are outside this repository target. The installer supports per-user Linux and macOS installs, not privileged system-wide installs.
+Protocol v1 has no restart reattachment. Preserved state does not make a running job reattachable after the runner or host restarts. The package command itself builds local archives only; GitHub workflows orchestrate verification and private release publication around those outputs. The installer supports per-user Linux and macOS installs, not privileged system-wide installs.
+
+## Continuous integration and private releases
+
+Pull requests targeting `master` and pushes to `master` run the complete repository verification gate on Linux amd64 with a read-only token. Fork pull requests receive no release credentials. Obsolete runs for the same pull request or ref are cancelled to limit Actions usage.
+
+A newly created trusted `vMAJOR.MINOR.PATCH` tag starts release verification only when the version matches `VERSION`, the tagged commit is on `master`, and GitHub associates it with a merged pull request to this repository. The tagged commit then runs the full native gate on Linux amd64/arm64 and macOS Intel/ARM64. Each native job supplies its matching verified archive as a three-day workflow artifact; a final job combines the four archives, creates `SHA256SUMS`, rechecks the tag, and publishes those exact files as a private GitHub Release without rebuilding them. Moved and deleted tag events do not enter the release DAG; repository-level immutable-release and tag policies remain part of the public-release hardening in issue #11.
+
+Reproduce release bytes locally from the tagged commit with:
+
+```sh
+SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD) make release-package
+```
+
+Validate the checked-in workflow contract with `make workflow-test`. On GitHub Free, a private repository owned by an account without a valid payment method stops running jobs when the included Actions quota is exhausted, so no paid overage or separate budget mutation is possible. The private setup conserves that quota by keeping routine pull-request and `master` verification on Linux amd64 and running the full four-platform matrix only for release tags. After the repository becomes public, issue #11 expands regular CI to the full supported matrix and adds required checks plus public token-free distribution.
 
 ## Troubleshooting
 
@@ -158,6 +189,7 @@ Protocol v1 has no restart reattachment. Preserved state does not make a running
 | Command | Purpose |
 |---------|---------|
 | `make doctor` | Check that the installed Go and Bun versions match the repository pins. |
+| `make workflow-test` | Validate workflow triggers, permissions, runner matrix, immutable action pins, artifact handoff, and release publication structure. |
 | `make schema-generate` | Regenerate the checked-in Go and TypeScript schema DTOs. |
 | `make schema-generated-check` | Prove two independent generations are byte-identical and match the checked-in DTOs. |
 | `make protocol-schema-test` | Run Go and Ajv draft-2020-12 validation over the shared fixture manifest. |
