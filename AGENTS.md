@@ -8,7 +8,8 @@ These instructions apply to the entire repository. Keep this file limited to sta
 
 - `managed-bash` is one Go binary. It exposes the public JSON-over-stdin CLI and launches its detached bootstrap, runner, and guardian modes from the same executable.
 - `plugins/opencode/` is a TypeScript+Bun OpenCode plugin. Keep it as a thin adapter for permissions, trusted OpenCode context, protocol transport, presentation, and session cleanup requests.
-- The Go binary owns process execution, persisted state, output capture, hard timeouts, and process-group cleanup. The plugin may request cancellation, but must not perform those responsibilities itself.
+- For native-tool and installed-CLI jobs, the Go binary owns process execution, persisted state, output capture, hard timeouts, and process-group cleanup. The plugin may request cancellation, but must not perform those responsibilities itself.
+- The standalone portable skill may use its bundled tmux fallback only when the native tool and CLI are absent. That reduced backend stores metadata in marked tmux sessions, never writes `.managed_bash`, returns explicit unsupported errors for byte cursor/range and output-limit semantics, and documents best-effort pane-process cleanup.
 - JSON Schema draft 2020-12 files under `schemas/v1/` are the protocol and persisted-state source of truth.
 - The product has no permanent daemon. Do not introduce one without an explicit design change.
 
@@ -36,10 +37,12 @@ Keep Go and TypeScript consumers on the same fixture manifest under `fixtures/v1
 ## Runtime Invariants
 
 - Runtime state lives at `<workspace>/.managed_bash/jobs/`. Code outside the Go runner must not delete, relocate, or rewrite a workspace's `.managed_bash` tree.
-- Wait and idle checkpoints return control without terminating a job. Hard timeout, explicit cancellation, and output-limit enforcement terminate the process group.
-- Preserve whole-process-group cleanup, including descendants that ignore `SIGTERM`.
-- Treat session ID, workspace path, and cwd from the host as trusted context. Model-supplied values must not override them.
-- Keep workspace paths physical, canonical, and symlink-safe. Cross-workspace reads look like missing jobs; mutations require the owner session.
+- Wait and idle checkpoints return control without terminating a job. For Go-runner jobs, hard timeout, explicit cancellation, and output-limit enforcement terminate the process group. The tmux fallback does not support output-limit enforcement and performs best-effort pane-process termination.
+- Preserve whole-process-group cleanup for Go-runner jobs, including descendants that ignore `SIGTERM`. Do not claim that guarantee for the reduced tmux fallback.
+- For native-tool and plugin-managed CLI jobs, treat session ID, workspace path, and cwd from the host as trusted context. Model-supplied values must not override them.
+- Keep Go-runner workspace paths physical, canonical, and symlink-safe. Cross-workspace reads look like missing jobs; mutations require the owner session.
+- The tmux fallback derives workspace identity from physical `pwd -P` and uses caller-supplied session identity only to prevent accidental crossover. Do not describe that same-user tmux metadata as a security boundary.
+- The standalone skill's CLI adapter also receives caller-supplied session/workspace identity. Do not describe it as equivalent to the OpenCode plugin's trusted-context boundary.
 - The plugin must fail with a structured tool error when the binary is missing, malformed, or incompatible. It must never fall back to built-in Bash.
 - `remove` deletes one terminal job. It is not package uninstall and must reject active jobs.
 - Protocol v1 does not support restart reattachment. Do not imply that preserved state makes active jobs reattachable after a restart.

@@ -1,0 +1,20 @@
+#!/bin/sh
+
+set +e
+
+command=$MANAGED_BASH_JOB_COMMAND
+tmux_binary=$MANAGED_BASH_JOB_TMUX
+socket=$MANAGED_BASH_JOB_SOCKET
+job=$MANAGED_BASH_JOB_ID
+unset MANAGED_BASH_JOB_COMMAND MANAGED_BASH_JOB_TMUX MANAGED_BASH_JOB_SOCKET MANAGED_BASH_JOB_ID MANAGED_BASH_TMUX_RUNNER
+
+/bin/sh -c "$command"
+exit_code=$?
+if [ -n "$socket" ]; then
+	"$tmux_binary" -L "$socket" set-option -q -t "$job" @managed_bash_exit_code "$exit_code"
+else
+	"$tmux_binary" set-option -q -t "$job" @managed_bash_exit_code "$exit_code"
+fi
+while :; do
+	/bin/sleep 86400
+done

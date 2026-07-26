@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "scenarios": [
+    {
+      "name": "successful rendered output",
+      "command": "printf portable-conformance",
+      "expected_status": "succeeded",
+      "expected_output": "portable-conformance"
+    },
+    {
+      "name": "nonzero exit",
+      "command": "exit 7",
+      "expected_status": "nonzero_exit",
+      "expected_exit_code": 7
+    },
+    {
+      "name": "signal exit",
+      "command": "kill -TERM $$",
+      "expected_status": "signal_exit",
+      "expected_signal": 15
+    },
+    {
+      "name": "cancellation",
+      "command": "sleep 30",
+      "expected_status": "cancelled"
+    },
+    {
+      "name": "hard timeout",
+      "command": "sleep 30",
+      "hard_timeout_ms": 1000,
+      "expected_status": "hard_timeout"
+    }
+  ],
+  "tmux_unsupported_arguments": [
+    "cursor_bytes",
+    "start_cursor_bytes",
+    "end_cursor_bytes",
+    "output_limit_bytes"
+  ]
+}

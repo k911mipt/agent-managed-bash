@@ -1,0 +1,44 @@
+#!/bin/sh
+
+set -eu
+
+case $0 in
+	*/*) script_path=$0 ;;
+	*) script_path=$(command -v "$0") ;;
+esac
+script_dir=${script_path%/*}
+[ "$script_dir" != "$script_path" ] || script_dir=.
+script_dir=$(CDPATH= cd -- "$script_dir" && pwd -P)
+
+action=${1-}
+if [ "$action" = --help ] || [ "$action" = -h ]; then
+	printf '%s\n' 'usage: managed-bash run|wait|status|output|cancel|remove|list|version [arguments]'
+	exit 0
+fi
+case $action in
+	run|wait|status|output|cancel|remove|list|version) ;;
+	'') printf '%s\n' 'managed-bash action is required: run|wait|status|output|cancel|remove|list|version' >&2; exit 2 ;;
+	*) printf 'unsupported managed-bash action: %s\n' "$action" >&2; exit 2 ;;
+esac
+
+cli=
+if [ -n "${MANAGED_BASH_BINARY-}" ] && command -v "$MANAGED_BASH_BINARY" >/dev/null 2>&1; then
+	cli=$(command -v "$MANAGED_BASH_BINARY")
+elif command -v managed-bash >/dev/null 2>&1; then
+	cli=$(command -v managed-bash)
+fi
+
+if [ -n "$cli" ]; then
+	printf 'managed-bash backend=cli executable=%s\n' "$cli" >&2
+	exec "$script_dir/cli-backend" "$cli" "$@"
+fi
+
+tmux_candidate=${MANAGED_BASH_TMUX_BINARY:-tmux}
+if command -v "$tmux_candidate" >/dev/null 2>&1; then
+	tmux_path=$(command -v "$tmux_candidate")
+	printf 'managed-bash backend=tmux executable=%s socket=%s\n' "$tmux_path" "${MANAGED_BASH_TMUX_SOCKET:-default}" >&2
+	exec "$script_dir/tmux-backend" "$tmux_path" "$@"
+fi
+
+printf '%s\n' 'managed-bash has no available backend; install tmux or managed-bash, or use the native managed_bash tool' >&2
+exit 127
