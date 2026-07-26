@@ -1,0 +1,98 @@
+#!/bin/sh
+
+set -eu
+
+script_dir=$(CDPATH= cd -- "${0%/*}" && pwd -P)
+. "$script_dir/common.sh"
+
+cli=${1:?CLI executable is required}
+shift
+action=${1:?action is required}
+shift
+
+session_id=${MANAGED_BASH_SESSION_ID:-portable-skill}
+workspace_path=${MANAGED_BASH_WORKSPACE_PATH:-$(pwd -P)}
+cwd=$(pwd -P)
+require_session_id "$session_id"
+context="{\"session_id\":$(json_quote "$session_id"),\"workspace_path\":$(json_quote "$workspace_path"),\"cwd\":$(json_quote "$cwd")}" 
+
+case $action in
+	version)
+		[ "$#" -eq 0 ] || die_usage 'version accepts no arguments'
+		request='{"schema_version":1,"action":"version"}'
+		;;
+	run)
+		hard_timeout=
+		output_limit=
+		while [ "$#" -gt 0 ] && [ "$1" != -- ]; do
+			case $1 in
+				--hard-timeout-ms) [ "$#" -ge 2 ] || die_usage '--hard-timeout-ms requires a value'; require_positive_bounded hard_timeout_ms "$2" 86400000; hard_timeout=$2; shift 2 ;;
+				--output-limit-bytes) [ "$#" -ge 2 ] || die_usage '--output-limit-bytes requires a value'; require_positive_bounded output_limit_bytes "$2" 104857600; output_limit=$2; shift 2 ;;
+				*) die_usage "unsupported run argument: $1" ;;
+			esac
+		done
+		[ "${1-}" = -- ] || die_usage 'run requires -- followed by one command string'
+		shift
+		[ "$#" -eq 1 ] || die_usage 'run requires exactly one command string after --'
+		require_command "$1"
+		payload="{\"command\":$(json_quote "$1")"
+		[ -z "$hard_timeout" ] || payload="$payload,\"hard_timeout_ms\":$hard_timeout"
+		[ -z "$output_limit" ] || payload="$payload,\"output_limit_bytes\":$output_limit"
+		request="{\"schema_version\":1,\"action\":\"run\",\"context\":$context,\"payload\":$payload}}"
+		;;
+	wait)
+		[ "$#" -ge 1 ] || die_usage 'wait requires a job ID'
+		job_id=$1
+		require_job_id "$job_id"
+		shift
+		payload="{\"job_id\":$(json_quote "$job_id")"
+		while [ "$#" -gt 0 ]; do
+			case $1 in
+				--cursor-bytes) field=cursor_bytes ;;
+				--timeout-ms) field=timeout_ms ;;
+				--idle-timeout-ms) field=idle_timeout_ms ;;
+				*) die_usage "unsupported wait argument: $1" ;;
+			esac
+			[ "$#" -ge 2 ] || die_usage "$1 requires a value"
+			if [ "$field" = cursor_bytes ]; then require_nonnegative_bounded "$field" "$2" 104857600; else require_positive_bounded "$field" "$2" 86400000; fi
+			payload="$payload,\"$field\":$2"
+			shift 2
+		done
+		request="{\"schema_version\":1,\"action\":\"wait\",\"context\":$context,\"payload\":$payload}}"
+		;;
+	status|cancel|remove)
+		[ "$#" -eq 1 ] || die_usage "$action requires one job ID"
+		require_job_id "$1"
+		request="{\"schema_version\":1,\"action\":\"$action\",\"context\":$context,\"payload\":{\"job_id\":$(json_quote "$1")}}"
+		;;
+	output)
+		[ "$#" -ge 1 ] || die_usage 'output requires a job ID'
+		job_id=$1
+		require_job_id "$job_id"
+		shift
+		payload="{\"job_id\":$(json_quote "$job_id")"
+		while [ "$#" -gt 0 ]; do
+			case $1 in
+				--start-cursor-bytes) field=start_cursor_bytes ;;
+				--end-cursor-bytes) field=end_cursor_bytes ;;
+				*) die_usage "unsupported output argument: $1" ;;
+			esac
+			[ "$#" -ge 2 ] || die_usage "$1 requires a value"
+			require_nonnegative_bounded "$field" "$2" 104857600
+			payload="$payload,\"$field\":$2"
+			shift 2
+		done
+		request="{\"schema_version\":1,\"action\":\"output\",\"context\":$context,\"payload\":$payload}}"
+		;;
+	list)
+		[ "$#" -eq 0 ] || die_usage 'list accepts no arguments'
+		request="{\"schema_version\":1,\"action\":\"list\",\"context\":$context}"
+		;;
+	*) die_usage "unsupported action: $action" ;;
+esac
+
+if [ "$action" = version ]; then
+	printf '%s' "$request" | "$cli" "$action"
+else
+	printf '%s' "$request" | MANAGED_BASH_HOST_SESSION_ID=$session_id MANAGED_BASH_HOST_WORKSPACE_PATH=$workspace_path "$cli" "$action"
+fi

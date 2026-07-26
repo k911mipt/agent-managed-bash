@@ -1,0 +1,176 @@
+#!/bin/sh
+
+set -eu
+
+script_dir=$(CDPATH= cd -- "${0%/*}" && pwd -P)
+. "$script_dir/common.sh"
+
+tmux_binary=${1:?tmux executable is required}
+shift
+action=${1:?action is required}
+shift
+socket=${MANAGED_BASH_TMUX_SOCKET-}
+case $socket in
+	*[!A-Za-z0-9_.-]*) die_usage 'MANAGED_BASH_TMUX_SOCKET contains unsupported characters' ;;
+esac
+current_owner=${MANAGED_BASH_SESSION_ID:-portable-skill}
+current_workspace=$(pwd -P)
+require_session_id "$current_owner"
+. "$script_dir/tmux-lib.sh"
+
+case $action in
+	version)
+		[ "$#" -eq 0 ] || die_usage 'version accepts no arguments'
+		version=$($tmux_binary -V | sed 's/^tmux //')
+		printf '{"schema_version":1,"ok":true,"action":"version","result":{"product":"managed-bash","binary_version":%s,"protocol_version":1,"os":%s,"architecture":%s}}\n' \
+			"$(json_quote "tmux-$version")" "$(json_quote "$(portable_os)")" "$(json_quote "$(portable_arch)")"
+		;;
+	run)
+		hard_timeout=7200000
+		while [ "$#" -gt 0 ] && [ "$1" != -- ]; do
+			case $1 in
+				--hard-timeout-ms) [ "$#" -ge 2 ] || die_usage '--hard-timeout-ms requires a value'; require_positive_bounded hard_timeout_ms "$2" 86400000; hard_timeout=$2; shift 2 ;;
+				--output-limit-bytes) die_usage '--output-limit-bytes is unsupported by the tmux backend' ;;
+				*) die_usage "unsupported run argument: $1" ;;
+			esac
+		done
+		[ "${1-}" = -- ] || die_usage 'run requires -- followed by one command string'
+		shift
+		[ "$#" -eq 1 ] || die_usage 'run requires exactly one command string after --'
+		command=$1
+		require_command "$command"
+		created=$(now_ms)
+		base="managed-bash-${created}-$$"
+		job=$base
+		index=0
+		while tmux_command has-session -t "$job" >/dev/null 2>&1; do index=$((index + 1)); job="$base-$index"; done
+		tmux_command new-session -d -s "$job" -x 200 -y 50 'sleep 86400'
+		tmux_command set-option -q -w -t "$job" remain-on-exit on
+		if tmux_command show-options -g -w remain-on-exit-format >/dev/null 2>&1; then
+			tmux_command set-option -q -w -t "$job" remain-on-exit-format ''
+		else
+			set_job_option "$job" @managed_bash_legacy_banner true
+		fi
+		tmux_command set-option -q -w -t "$job" history-limit 100000
+		set_job_option "$job" @managed_bash_backend tmux
+		set_job_option "$job" @managed_bash_command "$command"
+		set_job_option "$job" @managed_bash_owner "$current_owner"
+		set_job_option "$job" @managed_bash_workspace "$current_workspace"
+		set_job_option "$job" @managed_bash_cwd "$(pwd -P)"
+		set_job_option "$job" @managed_bash_created_ms "$created"
+		set_job_option "$job" @managed_bash_hard_timeout_ms "$hard_timeout"
+		tmux_command set-environment -t "$job" MANAGED_BASH_TMUX_RUNNER "$script_dir/tmux-runner"
+		tmux_command set-environment -t "$job" MANAGED_BASH_JOB_COMMAND "$command"
+		tmux_command set-environment -t "$job" MANAGED_BASH_JOB_TMUX "$tmux_binary"
+		tmux_command set-environment -t "$job" MANAGED_BASH_JOB_SOCKET "$socket"
+		tmux_command set-environment -t "$job" MANAGED_BASH_JOB_ID "$job"
+		tmux_command respawn-pane -k -t "$job" 'exec "$MANAGED_BASH_TMUX_RUNNER"'
+		seconds=$(((hard_timeout + 999) / 1000))
+		if [ "$seconds" -gt 0 ]; then
+			if [ -n "$socket" ]; then timer_tmux="$(json_quote "$tmux_binary") -L $socket"; else timer_tmux=$(json_quote "$tmux_binary"); fi
+			tmux_command run-shell -b "sleep $seconds; if $timer_tmux has-session -t $job 2>/dev/null && [ -z \"\$($timer_tmux show-options -v -t $job @managed_bash_exit_code 2>/dev/null)\" ] && [ -z \"\$($timer_tmux show-options -v -t $job @managed_bash_reason 2>/dev/null)\" ] && [ \"\$($timer_tmux display-message -p -t $job -F '#{pane_dead}')\" = 0 ]; then $timer_tmux set-option -q -t $job @managed_bash_reason hard_timeout; pid=\$($timer_tmux display-message -p -t $job -F '#{pane_pid}'); kill -TERM \"\$pid\" 2>/dev/null || true; sleep 2; if [ \"\$($timer_tmux display-message -p -t $job -F '#{pane_dead}')\" = 0 ]; then kill -KILL \"\$pid\" 2>/dev/null || true; fi; fi"
+		fi
+		printf '{"schema_version":1,"ok":true,"action":"run","result":%s}\n' "$(job_json "$job")"
+		;;
+	wait)
+		[ "$#" -ge 1 ] || die_usage 'wait requires a job ID'
+		job=$1
+		require_job_id "$job"
+		shift
+		timeout=300000
+		idle_timeout=120000
+		while [ "$#" -gt 0 ]; do
+			case $1 in
+				--cursor-bytes) die_usage '--cursor-bytes is unsupported by the tmux backend' ;;
+				--timeout-ms) field=timeout; label=timeout_ms ;;
+				--idle-timeout-ms) field=idle_timeout; label=idle_timeout_ms ;;
+				*) die_usage "unsupported wait argument: $1" ;;
+			esac
+			[ "$#" -ge 2 ] || die_usage "$1 requires a value"
+			require_positive_bounded "$label" "$2" 86400000
+			eval "$field=\$2"
+			shift 2
+		done
+		require_job "$job"
+		start=$(date +%s)
+		last_change=$start
+		previous=$(capture_output "$job")
+		while [ "$(job_status "$job")" = running ]; do
+			now=$(date +%s)
+			current=$(capture_output "$job")
+			if [ "$current" != "$previous" ]; then previous=$current; last_change=$now; fi
+			[ $(((now - start) * 1000)) -lt "$timeout" ] || break
+			[ $(((now - last_change) * 1000)) -lt "$idle_timeout" ] || break
+			sleep 1
+		done
+		printf '{"schema_version":1,"ok":true,"action":"wait","result":{"observation":%s,"output":%s}}\n' \
+			"$(observation_json "$job")" "$(output_json "$job")"
+		;;
+	status)
+		[ "$#" -eq 1 ] || die_usage 'status requires one job ID'
+		require_job_id "$1"
+		require_job "$1"
+		printf '{"schema_version":1,"ok":true,"action":"status","result":%s}\n' "$(observation_json "$1")"
+		;;
+	output)
+		[ "$#" -ge 1 ] || die_usage 'output requires a job ID'
+		job=$1
+		require_job_id "$job"
+		shift
+		[ "$#" -eq 0 ] || die_usage "$1 is unsupported by the tmux backend"
+		require_job "$job"
+		printf '{"schema_version":1,"ok":true,"action":"output","result":{"observation":%s,"output":%s}}\n' \
+			"$(observation_json "$job")" "$(output_json "$job")"
+		;;
+	cancel)
+		[ "$#" -eq 1 ] || die_usage 'cancel requires one job ID'
+		job=$1
+		require_job_id "$job"
+		require_owned_job "$job"
+		status=$(job_status "$job")
+		requested=$(job_option "$job" @managed_bash_cancelled_ms)
+		requested_by=$(job_option "$job" @managed_bash_cancelled_by)
+		if [ -n "$requested" ]; then
+			outcome=already_requested
+		elif [ "$status" = running ]; then
+			requested=$(now_ms)
+			requested_by=$current_owner
+			set_job_option "$job" @managed_bash_cancelled_ms "$requested"
+			set_job_option "$job" @managed_bash_cancelled_by "$requested_by"
+			terminate_job "$job" cancelled
+			outcome=requested
+		else
+			outcome=already_terminal
+		fi
+		printf '{"schema_version":1,"ok":true,"action":"cancel","result":{"job_id":%s,"status":%s,"outcome":%s' \
+			"$(json_quote "$job")" "$(json_quote "$(job_status "$job")")" "$(json_quote "$outcome")"
+		if [ "$outcome" != already_terminal ]; then
+			printf ',"cancellation":{"requested":true,"requested_at_unix_ms":%s,"requested_by_session_id":%s}' \
+				"$requested" "$(json_quote "$requested_by")"
+		fi
+		printf '}}\n'
+		;;
+	remove)
+		[ "$#" -eq 1 ] || die_usage 'remove requires one job ID'
+		job=$1
+		require_job_id "$job"
+		require_owned_job "$job"
+		[ "$(job_status "$job")" != running ] || { printf 'managed-bash tmux job is active: %s\n' "$job" >&2; exit 4; }
+		tmux_command kill-session -t "$job"
+		printf '{"schema_version":1,"ok":true,"action":"remove","result":{"job_id":%s,"removed":true}}\n' "$(json_quote "$job")"
+		;;
+	list)
+		[ "$#" -eq 0 ] || die_usage 'list accepts no arguments'
+		sessions=$(tmux_command list-sessions -F '#{session_name}' 2>/dev/null || true)
+		printf '{"schema_version":1,"ok":true,"action":"list","result":{"jobs":['
+		first=true
+		for job in $sessions; do
+			case $job in managed-bash-*) ;; *) continue ;; esac
+			job_visible "$job" || continue
+			if [ "$first" = true ]; then first=false; else printf ','; fi
+			job_json "$job"
+		done
+		printf ']}}\n'
+		;;
+	*) die_usage "unsupported action: $action" ;;
+esac
