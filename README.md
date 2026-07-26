@@ -8,6 +8,8 @@ The v1 CLI contract permits a bounded one-shot read of the full captured prefix,
 
 The OpenCode plugin exposes one `managed_bash` tool. It does not fall back to OpenCode's built-in Bash tool when the binary is missing, incompatible, or returns malformed protocol output.
 
+The repository also includes a standalone project skill at `.opencode/skills/managed-bash/`. It uses the native tool when the host exposes it, otherwise selects a separately installed CLI and finally a bundled, fileless tmux fallback. Installing the skill installs nothing else; fallback operation requires `tmux` to already be available.
+
 ## Prerequisites
 
 - Go `1.26.5`
@@ -137,9 +139,19 @@ The plugin resolves the CLI in this order:
 
 The plugin resolves that selection to one physical release path for the lifetime of the OpenCode process. This prevents a loaded plugin from switching to a different binary when an installer update moves `current`. The plugin requires an exact product, release, and protocol match during its version handshake. It returns a structured tool error on mismatch or transport failure. It never calls built-in Bash as a fallback.
 
+The standalone skill has a separate selection boundary:
+
+1. Its runtime instructions use the native `managed_bash` tool when available.
+2. Its dispatcher uses `MANAGED_BASH_BINARY`, then `managed-bash` from `PATH`.
+3. If neither CLI path exists, its bundled scripts use an existing `tmux` installation.
+
+The tmux fallback stores metadata only in marked tmux sessions and never writes `.managed_bash`. It retains completed panes for status and a normalized tail of at most 200 rendered terminal lines until `remove`. Because `capture-pane` is a rendered terminal snapshot rather than an append-only byte log, cursor/range arguments and output-limit enforcement are explicitly unsupported. Cancellation and hard timeout perform best-effort pane-process cleanup rather than the Go runner's whole-process-group guarantee.
+
+Tmux reads are filtered to jobs created from the same physical `pwd -P`; mutations also compare the caller-provided `MANAGED_BASH_SESSION_ID`. These checks prevent accidental crossover on a shared tmux socket, but they are not a security boundary against another process running as the same operating-system user.
+
 OpenCode can hide its built-in Bash tool while the plugin retains command permission checks. Disable the tool with `tools.bash: false`, then allow the command patterns that `managed_bash` may run under `permission.bash`.
 
-## Security model
+## Go runner security model
 
 - OpenCode supplies the session ID, physical workspace path, and working directory. Model arguments cannot override them.
 - Stateful requests must match the host-owned context. Cross-workspace reads look like missing jobs, and only the owner session can mutate a job.
@@ -201,6 +213,7 @@ Validate the checked-in workflow contract with `make workflow-test`. On GitHub F
 | `make cli-race-test` | Run focused CLI tests with the race detector and randomized order. |
 | `make cli-build` | Build `bin/managed-bash`. |
 | `make cli-acceptance` | Build and exercise the real binary through help, version, lifecycle, malformed, and incompatible-version scenarios. |
+| `make portable-skill-test` | Exercise CLI-before-tmux selection, tmux lifecycle and diagnostics, reduced-semantics errors, and real CLI/tmux conformance fixtures. |
 | `SOURCE_DATE_EPOCH=<unix-seconds> make release-package` | Build and verify reproducible Linux/Darwin amd64/arm64 release archives under `dist/`. |
 | `SOURCE_DATE_EPOCH=<unix-seconds> make release-package-test` | Prove strict archive rejection, four-target byte reproducibility, normalized metadata, transactional install/uninstall, and native extracted and installed CLI acceptance. |
 | `SOURCE_DATE_EPOCH=<unix-seconds> make installed-opencode-e2e` | Install the native archive into temporary HOME/XDG paths and drive OpenCode 1.18.x through checkpoint, parallel control, cancellation, hard-timeout, cursor, permission-denial, completion, and no-fallback scenarios. |
