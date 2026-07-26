@@ -14,7 +14,8 @@ session_id=${MANAGED_BASH_SESSION_ID:-portable-skill}
 workspace_path=${MANAGED_BASH_WORKSPACE_PATH:-$(pwd -P)}
 cwd=$(pwd -P)
 require_session_id "$session_id"
-context="{\"session_id\":$(json_quote "$session_id"),\"workspace_path\":$(json_quote "$workspace_path"),\"cwd\":$(json_quote "$cwd")}" 
+context=$(printf '{"session_id":%s,"workspace_path":%s,"cwd":%s}' \
+	"$(json_quote "$session_id")" "$(json_quote "$workspace_path")" "$(json_quote "$cwd")")
 
 case $action in
 	version)
