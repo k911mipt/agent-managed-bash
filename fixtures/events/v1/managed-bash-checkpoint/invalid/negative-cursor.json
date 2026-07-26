@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "event": "wait_checkpoint",
+  "job_id": "job-1",
+  "status": "running",
+  "captured_bytes": 0,
+  "start_cursor_bytes": -1,
+  "next_cursor_bytes": 0
+}

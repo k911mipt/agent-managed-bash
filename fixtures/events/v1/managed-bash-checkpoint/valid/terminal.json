@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "event": "wait_checkpoint",
+  "job_id": "job-1",
+  "status": "succeeded",
+  "captured_bytes": 8192,
+  "start_cursor_bytes": 4096,
+  "next_cursor_bytes": 8192,
+  "finished_at_unix_ms": 1785081600000
+}

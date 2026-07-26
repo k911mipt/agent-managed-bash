@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { ToolContext } from "@opencode-ai/plugin"
 import type { Request, Response } from "./generated/protocol.gen"
 import type { CliExecutor } from "./cli-transport"
+import { checkpointMetadata } from "./managed-bash-checkpoint"
 import { createManagedBashController } from "./managed-bash-plugin"
 
 const encoder = new TextEncoder()
@@ -82,6 +83,7 @@ describe("managed_bash", () => {
     }
     expect(result.title).toBe("managed_bash error")
     expect(result.output).toContain("runner_protocol_error")
+    expect(result.metadata).toEqual({ code: "runner_protocol_error" })
   })
 
   test("renders normal responses without repeating the quiet output limit", async () => {
@@ -101,6 +103,7 @@ describe("managed_bash", () => {
     }
     expect(result.output).toContain("job-1")
     expect(result.output).not.toContain("104857600")
+    expect(result.metadata).toBeUndefined()
   })
 
   test("does not repeat command permission for an existing job operation", async () => {
@@ -110,7 +113,7 @@ describe("managed_bash", () => {
     })
     let asks = 0
 
-    await controller.execute(
+    const result = await controller.execute(
       { action: "wait", job_id: "job-1" },
       toolContext(async () => {
         asks += 1
@@ -128,6 +131,11 @@ describe("managed_bash", () => {
       },
       payload: { job_id: "job-1" },
     })
+    expect(typeof result).toBe("object")
+    if (typeof result === "string") {
+      throw new TypeError("expected structured tool result")
+    }
+    expect(result.metadata).toEqual(checkpointMetadata(waitResponse()))
   })
 
   test("returns a structured error when the version handshake is incompatible", async () => {
@@ -258,7 +266,7 @@ function runResponse(): Extract<Response, { action: "run" }> {
   }
 }
 
-function waitResponse(): Response {
+function waitResponse(): Extract<Response, { action: "wait" }> {
   return {
     schema_version: 1,
     ok: true,

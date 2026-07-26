@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-managed-bash.dev/schema/events/v1/managed-bash-checkpoint.schema.json",
+  "title": "ManagedBashCheckpoint",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "event": { "type": "string", "const": "wait_checkpoint" },
+    "job_id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-zA-Z0-9_-]+$" },
+    "status": {
+      "type": "string",
+      "enum": [
+        "running", "succeeded", "nonzero_exit", "signal_exit", "cancelled",
+        "hard_timeout", "output_limit", "runner_lost"
+      ]
+    },
+    "captured_bytes": { "type": "integer", "minimum": 0, "maximum": 104857600 },
+    "start_cursor_bytes": { "type": "integer", "minimum": 0, "maximum": 104857600 },
+    "next_cursor_bytes": { "type": "integer", "minimum": 0, "maximum": 104857600 },
+    "finished_at_unix_ms": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+  },
+  "required": [
+    "schema_version", "event", "job_id", "status", "captured_bytes",
+    "start_cursor_bytes", "next_cursor_bytes"
+  ]
+}

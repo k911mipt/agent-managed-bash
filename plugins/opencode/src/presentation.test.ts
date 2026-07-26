@@ -37,7 +37,47 @@ test("wait output reports the persisted cursor interval", () => {
   if (typeof result === "string") {
     throw new TypeError("expected structured tool result")
   }
-  expect(result.output).toContain("cursor 10→20/20")
+  expect(result.output).toBe("job job-1: running\nnew output\ncursor 10→20/20")
+  expect(result.metadata).toEqual({
+    managed_bash_checkpoint: {
+      schema_version: 1,
+      event: "wait_checkpoint",
+      job_id: "job-1",
+      status: "running",
+      captured_bytes: 20,
+      start_cursor_bytes: 10,
+      next_cursor_bytes: 20,
+    },
+  })
+})
+
+test("non-wait successes and errors do not contain checkpoint metadata", () => {
+  // Given
+  const runResponse = {
+    schema_version: 1,
+    ok: true,
+    action: "run",
+    result: waitResponse("").result.observation.job,
+  } satisfies Extract<Response, { action: "run" }>
+  const errorResponse = {
+    schema_version: 1,
+    ok: false,
+    action: "wait",
+    error: { code: "job_not_found", message: "job does not exist" },
+  } satisfies Response
+
+  // When
+  const runResult = formatProtocolResponse(runResponse)
+  const errorResult = formatProtocolResponse(errorResponse)
+
+  // Then
+  expect(typeof runResult).toBe("object")
+  expect(typeof errorResult).toBe("object")
+  if (typeof runResult === "string" || typeof errorResult === "string") {
+    throw new TypeError("expected structured tool results")
+  }
+  expect(runResult.metadata).toBeUndefined()
+  expect(errorResult.metadata).toEqual({ code: "job_not_found" })
 })
 
 test("preserves exactly 200 newline-terminated output lines", () => {
@@ -84,7 +124,7 @@ test("renders protocol error details in a fixed safe order", () => {
   )
 })
 
-function waitResponse(text: string): Response {
+function waitResponse(text: string): Extract<Response, { action: "wait" }> {
   return {
     schema_version: 1,
     ok: true,
