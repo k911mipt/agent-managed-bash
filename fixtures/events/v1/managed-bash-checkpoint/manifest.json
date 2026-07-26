@@ -1,0 +1,11 @@
+{
+  "cases": [
+    { "name": "valid running wait checkpoint", "path": "valid/running.json", "valid": true },
+    { "name": "valid terminal wait checkpoint", "path": "valid/terminal.json", "valid": true },
+    { "name": "reject unsupported schema version", "path": "invalid/schema-version.json", "valid": false },
+    { "name": "reject missing cursor", "path": "invalid/missing-cursor.json", "valid": false },
+    { "name": "reject invalid job id", "path": "invalid/job-id.json", "valid": false },
+    { "name": "reject negative cursor", "path": "invalid/negative-cursor.json", "valid": false },
+    { "name": "reject output text extension", "path": "invalid/output-text.json", "valid": false }
+  ]
+}
