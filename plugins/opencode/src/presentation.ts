@@ -1,5 +1,6 @@
 import type { ToolResult } from "@opencode-ai/plugin"
 import type { ErrorDetails, JobObservation, OutputChunk, Response } from "./generated/protocol.gen"
+import { checkpointMetadata } from "./managed-bash-checkpoint"
 
 const responseLineLimit = 200
 const errorDetailValueLimit = 256
@@ -13,7 +14,11 @@ export function formatProtocolResponse(response: Response): ToolResult {
     case "run":
       return result(`job ${response.result.job_id}: ${response.result.status}`)
     case "wait":
-      return result(formatOutputObservation(response.result.observation, response.result.output))
+      return {
+        title: "managed_bash",
+        output: formatOutputObservation(response.result.observation, response.result.output),
+        metadata: checkpointMetadata(response),
+      }
     case "status":
       return result(formatObservation(response.result))
     case "output":
