@@ -1,4 +1,4 @@
-.PHONY: cli-acceptance cli-build cli-race-test cli-test doctor e2e-test generated-model-compile go-check installed-opencode-e2e opencode-plugin-config-test plugin-bundle plugin-bundle-test plugin-test plugin-typecheck protocol-schema-test release-package release-package-test release-version-test runner-test schema-check schema-generate schema-generated-check state-schema-test verify workflow-test
+.PHONY: cli-acceptance cli-build cli-race-test cli-test doctor e2e-test generated-model-compile go-check installed-opencode-e2e opencode-plugin-config-test plugin-bundle plugin-bundle-test plugin-test plugin-typecheck portable-skill-test protocol-schema-test release-package release-package-test release-version-test runner-test schema-check schema-generate schema-generated-check state-schema-test verify workflow-test
 
 CLI_BINARY ?= bin/managed-bash
 CLI_PACKAGE ?= ./cmd/managed-bash
@@ -25,6 +25,11 @@ cli-build:
 
 cli-acceptance: cli-build
 	@sh tests/cli_binary_test.sh "$(abspath $(CLI_BINARY))"
+
+portable-skill-test: cli-build
+	@sh tests/portable_skill_test.sh
+	@sh tests/portable_skill_edge_test.sh
+	@sh tests/portable_skill_conformance_test.sh "$(abspath $(CLI_BINARY))"
 
 release-version-test:
 	@sh tests/release_version_test.sh
@@ -99,6 +104,7 @@ verify:
 	@$(MAKE) --no-print-directory runner-test
 	@$(MAKE) --no-print-directory cli-race-test
 	@$(MAKE) --no-print-directory cli-acceptance
+	@$(MAKE) --no-print-directory portable-skill-test
 	@$(MAKE) --no-print-directory release-version-test
 	@$(MAKE) --no-print-directory plugin-test
 	@$(MAKE) --no-print-directory plugin-typecheck
