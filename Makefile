@@ -1,4 +1,4 @@
-.PHONY: cli-acceptance cli-build cli-race-test cli-test doctor e2e-test generated-model-compile go-check installed-opencode-e2e opencode-plugin-config-test plugin-bundle plugin-bundle-test plugin-test plugin-typecheck portable-skill-test protocol-schema-test release-package release-package-test release-version-test runner-test schema-check schema-generate schema-generated-check state-schema-test verify workflow-test
+.PHONY: checkpoint-event-schema-test cli-acceptance cli-build cli-race-test cli-test doctor e2e-test generated-model-compile go-check installed-opencode-e2e opencode-plugin-config-test plugin-bundle plugin-bundle-test plugin-test plugin-typecheck portable-skill-test protocol-schema-test release-package release-package-test release-version-test runner-test schema-check schema-generate schema-generated-check state-schema-test verify workflow-test
 
 CLI_BINARY ?= bin/managed-bash
 CLI_PACKAGE ?= ./cmd/managed-bash
@@ -121,6 +121,9 @@ protocol-schema-test:
 	@GOTOOLCHAIN=local go test -run 'Test_(ProtocolSchemaFixtures|FixtureManifest)' ./internal/protocol
 	@bun test plugins/opencode/src/protocol-schema.test.ts
 
+checkpoint-event-schema-test:
+	@bun test plugins/opencode/src/managed-bash-checkpoint-schema.test.ts
+
 state-schema-test:
 	@GOTOOLCHAIN=local go test ./internal/state
 
@@ -136,4 +139,4 @@ workflow-test:
 	@GOTOOLCHAIN=local go tool actionlint
 	@GOTOOLCHAIN=local go test -race -shuffle=on -count=1 ./internal/workflow
 
-schema-check: schema-generated-check protocol-schema-test generated-model-compile state-schema-test
+schema-check: schema-generated-check protocol-schema-test checkpoint-event-schema-test generated-model-compile state-schema-test
