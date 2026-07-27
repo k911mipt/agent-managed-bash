@@ -17,9 +17,21 @@ concurrency:
 
 jobs:
   verify:
-    name: Linux amd64 verification
-    runs-on: ubuntu-24.04
+    name: Verify ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-amd64
+            runner: ubuntu-24.04
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+          - target: darwin-amd64
+            runner: macos-15-intel
+          - target: darwin-arm64
+            runner: macos-15
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -42,7 +54,16 @@ jobs:
         run: printf '%s\n' "$GITHUB_WORKSPACE/node_modules/.bin" >> "$GITHUB_PATH"
       - name: Check OpenCode
         run: test "$(opencode --version)" = "1.18.4"
-      - name: Set source date epoch
-        run: printf 'SOURCE_DATE_EPOCH=%s\n' "$(git show -s --format=%ct HEAD)" >> "$GITHUB_ENV"
       - name: Run complete verification
-        run: make verify
+        run: SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)" make verify
+
+  verification-gate:
+    name: Verification gate
+    needs: verify
+    if: always()
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Fail unless all verifications succeed
+        run: test "${{ needs.verify.result }}" = "success"

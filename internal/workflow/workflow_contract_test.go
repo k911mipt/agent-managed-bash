@@ -2,18 +2,21 @@ package workflow
 
 import (
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 const (
-	checkoutAction = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
-	setupGoAction  = "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e"
-	setupBunAction = "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6"
-	uploadAction   = "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
-	downloadAction = "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"
+	checkoutAction  = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+	setupGoAction   = "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e"
+	setupNodeAction = "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020"
+	setupBunAction  = "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6"
+	uploadAction    = "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+	downloadAction  = "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"
+	sbomAction      = "anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610"
+	attestAction    = "actions/attest@a1948c3f048ba23858d222213b7c278aabede763"
 )
 
 func Test_CIWorkflow_runs_read_only_full_verification_on_pull_requests_and_master(t *testing.T) {
@@ -25,13 +28,19 @@ func Test_CIWorkflow_runs_read_only_full_verification_on_pull_requests_and_maste
 	verification := job(t, workflow, "verify")
 
 	// Then
+	require.Len(t, triggers.Content, 4)
 	require.Equal(t, []string{"master"}, sequenceValues(t, mappingValue(t, mappingValue(t, triggers, "pull_request"), "branches")))
 	require.Equal(t, []string{"master"}, sequenceValues(t, mappingValue(t, mappingValue(t, triggers, "push"), "branches")))
 	_, privilegedTriggerExists := mappingValueIfPresent(triggers, "pull_request_target")
 	require.False(t, privilegedTriggerExists)
-	require.Equal(t, "read", scalarValue(t, mappingValue(t, workflow, "permissions"), "contents"))
+	permissions := mappingValue(t, workflow, "permissions")
+	require.Len(t, permissions.Content, 2)
+	require.Equal(t, "read", scalarValue(t, permissions, "contents"))
+	_, verificationPermissionsExist := mappingValueIfPresent(verification, "permissions")
+	require.False(t, verificationPermissionsExist)
 	require.Equal(t, "true", scalarValue(t, mappingValue(t, workflow, "concurrency"), "cancel-in-progress"))
-	require.Equal(t, "ubuntu-24.04", scalarValue(t, verification, "runs-on"))
+	require.Equal(t, "Verify ${{ matrix.target }}", scalarValue(t, verification, "name"))
+	require.Equal(t, "${{ matrix.runner }}", scalarValue(t, verification, "runs-on"))
 	require.Equal(t, "90", scalarValue(t, verification, "timeout-minutes"))
 	require.Equal(t, "false", scalarValue(t, mappingValue(t, stepByName(t, verification, "Check out source"), "with"), "persist-credentials"))
 	require.Equal(t, "1.26.5", scalarValue(t, mappingValue(t, stepByName(t, verification, "Set up Go"), "with"), "go-version"))
@@ -40,8 +49,7 @@ func Test_CIWorkflow_runs_read_only_full_verification_on_pull_requests_and_maste
 	openCodeCheck := scalarValue(t, stepByName(t, verification, "Check OpenCode"), "run")
 	require.Equal(t, `test "$(opencode --version)" = "1.18.4"`, openCodeCheck)
 	require.NotContains(t, openCodeCheck, "install --global")
-	require.Contains(t, scalarValue(t, stepByName(t, verification, "Set source date epoch"), "run"), "git show -s --format=%ct HEAD")
-	require.Equal(t, "make verify", scalarValue(t, stepByName(t, verification, "Run complete verification"), "run"))
+	require.Equal(t, `SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)" make verify`, scalarValue(t, stepByName(t, verification, "Run complete verification"), "run"))
 }
 
 func Test_ReleaseWorkflow_validates_reviewed_tag_and_verifies_all_native_targets(t *testing.T) {
@@ -122,26 +130,14 @@ func Test_ReleaseWorkflow_publishes_verified_artifact_without_rebuilding(t *test
 
 func Test_Workflows_pin_remote_actions_to_approved_commits(t *testing.T) {
 	// Given
-	approved := map[string]struct{}{
-		checkoutAction: {},
-		setupGoAction:  {},
-		setupBunAction: {},
-		uploadAction:   {},
-		downloadAction: {},
-	}
+	ciWorkflow := loadWorkflow(t, "ci.yml")
+	releaseWorkflow := loadWorkflow(t, "release.yml")
 
 	// When
-	uses := append(remoteActionUses(loadWorkflow(t, "ci.yml")), remoteActionUses(loadWorkflow(t, "release.yml"))...)
+	err := validateApprovedRemoteActions(ciWorkflow, releaseWorkflow)
 
 	// Then
-	require.NotEmpty(t, uses)
-	for _, action := range uses {
-		_, ok := approved[action]
-		require.True(t, ok, "unapproved action reference: %s", action)
-		parts := strings.Split(action, "@")
-		require.Len(t, parts, 2)
-		require.Len(t, parts[1], 40)
-	}
+	require.NoError(t, err)
 }
 
 func Test_Makefile_includes_workflow_contract_in_complete_verification(t *testing.T) {
