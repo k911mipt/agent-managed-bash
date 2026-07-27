@@ -112,65 +112,245 @@ jobs:
         run: test "$(opencode --version)" = "1.18.4"
       - name: Run complete verification
         run: make verify
-      - name: Upload verified release bundles
+      - name: Create release producer receipts
+        run: |
+          SOURCE_DATE_EPOCH="${{ needs.validate.outputs.epoch }}" make verify
+          asset="agent-managed-bash-${{ needs.validate.outputs.version }}-${{ matrix.target }}.tar.gz"
+          bun scripts/release-candidate.ts producer --asset "dist/$asset" --name "$asset" --version "${{ needs.validate.outputs.version }}" --commit "${{ needs.validate.outputs.commit }}" --output "dist/$asset.receipt.json"
+          if [ "${{ matrix.target }}" = linux-amd64 ]; then
+            make npm-package
+            cp packaging/install-release.sh dist/install-release.sh
+            for asset in "k911mipt-opencode-agent-managed-bash-${{ needs.validate.outputs.version }}.tgz" install-release.sh; do
+              bun scripts/release-candidate.ts producer --asset "dist/$asset" --name "$asset" --version "${{ needs.validate.outputs.version }}" --commit "${{ needs.validate.outputs.commit }}" --output "dist/$asset.receipt.json"
+            done
+          fi
+      - name: Upload native producer artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: release-bundle-${{ needs.validate.outputs.tag }}-${{ matrix.target }}
-          path: dist/agent-managed-bash-${{ needs.validate.outputs.version }}-${{ matrix.target }}.tar.gz
+          name: producer-${{ needs.validate.outputs.tag }}-${{ matrix.target }}
+          path: |
+            dist/agent-managed-bash-${{ needs.validate.outputs.version }}-${{ matrix.target }}.tar.gz
+            dist/agent-managed-bash-${{ needs.validate.outputs.version }}-${{ matrix.target }}.tar.gz.receipt.json
           if-no-files-found: error
-          retention-days: 3
+          retention-days: 90
+          compression-level: 0
+      - name: Upload npm producer artifact
+        if: matrix.target == 'linux-amd64'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: producer-${{ needs.validate.outputs.tag }}-npm
+          path: |
+            dist/k911mipt-opencode-agent-managed-bash-${{ needs.validate.outputs.version }}.tgz
+            dist/k911mipt-opencode-agent-managed-bash-${{ needs.validate.outputs.version }}.tgz.receipt.json
+          retention-days: 90
+          compression-level: 0
+      - name: Upload bootstrap producer artifact
+        if: matrix.target == 'linux-amd64'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: producer-${{ needs.validate.outputs.tag }}-bootstrap
+          path: |
+            dist/install-release.sh
+            dist/install-release.sh.receipt.json
+          retention-days: 90
           compression-level: 0
 
-  publish:
-    name: Publish private GitHub release
-    needs:
-      - validate
-      - verify
+  sbom:
+    name: Scan ${{ matrix.asset }}
+    needs: [validate, verify]
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: write
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - artifact: linux-amd64
+            asset: agent-managed-bash-${{ needs.validate.outputs.version }}-linux-amd64.tar.gz
+          - artifact: linux-arm64
+            asset: agent-managed-bash-${{ needs.validate.outputs.version }}-linux-arm64.tar.gz
+          - artifact: darwin-amd64
+            asset: agent-managed-bash-${{ needs.validate.outputs.version }}-darwin-amd64.tar.gz
+          - artifact: darwin-arm64
+            asset: agent-managed-bash-${{ needs.validate.outputs.version }}-darwin-arm64.tar.gz
+          - artifact: npm
+            asset: k911mipt-opencode-agent-managed-bash-${{ needs.validate.outputs.version }}.tgz
     steps:
-      - name: Download verified release bundles
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.validate.outputs.commit }}
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.14
+      - name: Install scanner dependencies
+        run: bun install --frozen-lockfile
+      - name: Download one producer artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: release-bundle-${{ needs.validate.outputs.tag }}-*
+          name: producer-${{ needs.validate.outputs.tag }}-${{ matrix.artifact }}
+          path: input
+      - name: Reverify one producer receipt
+        run: bun scripts/release-candidate.ts verify-producer --directory input --name "${{ matrix.asset }}"
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          file: input/${{ matrix.asset }}
+          output-file: input/${{ matrix.asset }}.spdx.json
+          format: spdx-json
+          upload-artifact: false
+          upload-release-assets: false
+          syft-version: 1.49.0
+      - name: Create SBOM relation receipt
+        run: bun scripts/release-candidate.ts relation --asset "input/${{ matrix.asset }}" --subject-receipt "input/${{ matrix.asset }}.receipt.json" --predicate "input/${{ matrix.asset }}.spdx.json" --schema schemas/spdx-schema.json --output "input/${{ matrix.asset }}.spdx.json.relation.json"
+      - name: Upload SBOM relation artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: relation-${{ needs.validate.outputs.tag }}-${{ matrix.artifact }}
+          path: |
+            input/${{ matrix.asset }}.spdx.json
+            input/${{ matrix.asset }}.spdx.json.relation.json
+          retention-days: 90
+          compression-level: 0
+
+  prepare:
+    name: Prepare verified release candidate
+    needs: [validate, verify, sbom]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      candidate-id: ${{ steps.candidate.outputs.artifact-id }}
+      candidate-digest: ${{ steps.candidate.outputs.artifact-digest }}
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.validate.outputs.commit }}
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.14
+      - name: Install prepare dependencies
+        run: bun install --frozen-lockfile
+      - name: Download producer artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: producer-${{ needs.validate.outputs.tag }}-*
+          path: producers
           merge-multiple: true
-          path: dist
-      - name: Publish private GitHub release
+      - name: Download SBOM relation artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: relation-${{ needs.validate.outputs.tag }}-*
+          path: relations
+          merge-multiple: true
+      - name: Assemble release candidate
         env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
-          VERIFIED_COMMIT: ${{ needs.validate.outputs.commit }}
-          VERSION: ${{ needs.validate.outputs.version }}
-        run: |
-          set -eu
-          cd dist
-          for target in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64; do
-            test -f "agent-managed-bash-$VERSION-$target.tar.gz"
-          done
-          test "$(find . -maxdepth 1 -name 'agent-managed-bash-*.tar.gz' -type f | wc -l | tr -d ' ')" = 4
-          sha256sum agent-managed-bash-*.tar.gz > SHA256SUMS
-          sha256sum -c SHA256SUMS
-          tag_object=$(gh api \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" \
-            --jq '.object.type + " " + .object.sha')
-          tag_type=${tag_object%% *}
-          tag_sha=${tag_object#* }
-          if [[ "$tag_type" == tag ]]; then
-            tag_object=$(gh api \
-              -H 'X-GitHub-Api-Version: 2022-11-28' \
-              "repos/$GITHUB_REPOSITORY/git/tags/$tag_sha" \
-              --jq '.object.type + " " + .object.sha')
-            tag_type=${tag_object%% *}
-            tag_sha=${tag_object#* }
-          fi
-          test "$tag_type" = commit
-          test "$tag_sha" = "$VERIFIED_COMMIT"
-          gh release create "$RELEASE_TAG" \
-            agent-managed-bash-*.tar.gz SHA256SUMS \
-            --repo "$GITHUB_REPOSITORY" \
-            --verify-tag \
-            --generate-notes \
-            --title "$RELEASE_TAG"
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          RELEASE_WORKFLOW: release.yml
+          RELEASE_RUN_ID: ${{ github.run_id }}
+          RELEASE_RUN_ATTEMPT: ${{ github.run_attempt }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: bun scripts/release-candidate.ts assemble --producers producers --relations relations --output candidate --schema schemas/spdx-schema.json
+      - name: Read release workflow blob
+        id: workflow
+        run: printf 'blob=%s\n' "$(git rev-parse HEAD:.github/workflows/release.yml)" >> "$GITHUB_OUTPUT"
+      - name: Upload release candidate
+        id: candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-candidate-${{ needs.validate.outputs.tag }}
+          path: candidate
+          retention-days: 90
+          compression-level: 0
+      - name: Create private candidate metadata
+        env:
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          RELEASE_WORKFLOW: release.yml
+          RELEASE_WORKFLOW_BLOB: ${{ steps.workflow.outputs.blob }}
+          RELEASE_RUN_ID: ${{ github.run_id }}
+          RELEASE_RUN_ATTEMPT: ${{ github.run_attempt }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          RELEASE_CANDIDATE_ARTIFACT_ID: ${{ steps.candidate.outputs.artifact-id }}
+          RELEASE_CANDIDATE_ARTIFACT_DIGEST: ${{ steps.candidate.outputs.artifact-digest }}
+        run: bun scripts/release-candidate.ts metadata --candidate candidate --artifact-id "$RELEASE_CANDIDATE_ARTIFACT_ID" --artifact-digest "$RELEASE_CANDIDATE_ARTIFACT_DIGEST" --producers producers --relations relations --schema schemas/spdx-schema.json --output candidate-metadata.json
+      - name: Upload private candidate metadata
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-candidate-metadata-${{ needs.validate.outputs.tag }}
+          path: candidate-metadata.json
+          retention-days: 90
+          compression-level: 0
+
+  control:
+    name: Bind release candidate control receipt
+    needs: [validate, prepare]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.validate.outputs.commit }}
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.14
+      - name: Install control dependencies
+        run: bun install --frozen-lockfile
+      - name: Download candidate artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-candidate-${{ needs.validate.outputs.tag }}
+          path: candidate
+      - name: Download producer receipts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: producer-${{ needs.validate.outputs.tag }}-*
+          path: producers
+          merge-multiple: true
+      - name: Download private candidate metadata
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-candidate-metadata-${{ needs.validate.outputs.tag }}
+          path: metadata
+      - name: Download relation receipts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: relation-${{ needs.validate.outputs.tag }}-*
+          path: relations
+          merge-multiple: true
+      - name: Read release workflow blob
+        id: workflow
+        run: printf 'blob=%s\n' "$(git rev-parse HEAD:.github/workflows/release.yml)" >> "$GITHUB_OUTPUT"
+      - name: Create candidate control receipt
+        env:
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          RELEASE_WORKFLOW: release.yml
+          RELEASE_WORKFLOW_BLOB: ${{ steps.workflow.outputs.blob }}
+          RELEASE_RUN_ID: ${{ github.run_id }}
+          RELEASE_RUN_ATTEMPT: ${{ github.run_attempt }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          RELEASE_CANDIDATE_ARTIFACT_ID: ${{ needs.prepare.outputs.candidate-id }}
+          RELEASE_CANDIDATE_ARTIFACT_DIGEST: ${{ needs.prepare.outputs.candidate-digest }}
+        run: bun scripts/release-candidate.ts control --candidate candidate --artifact-id "$RELEASE_CANDIDATE_ARTIFACT_ID" --artifact-digest "$RELEASE_CANDIDATE_ARTIFACT_DIGEST" --metadata metadata/candidate-metadata.json --output control/CANDIDATE-RECEIPT.json --producers producers --relations relations --schema schemas/spdx-schema.json
+      - name: Upload candidate control receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-candidate-control-${{ needs.validate.outputs.tag }}
+          path: control/CANDIDATE-RECEIPT.json
+          retention-days: 90
+          compression-level: 0

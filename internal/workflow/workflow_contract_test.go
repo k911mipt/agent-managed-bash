@@ -128,6 +128,35 @@ func Test_ReleaseWorkflow_publishes_verified_artifact_without_rebuilding(t *test
 	}
 }
 
+func Test_ReleaseWorkflow_creates_candidate_artifacts_without_external_publication(t *testing.T) {
+	// Given
+	workflow := loadWorkflow(t, "release.yml")
+	verification := job(t, workflow, "verify")
+	prepare := job(t, workflow, "prepare")
+	control := job(t, workflow, "control")
+
+	// When
+	upload := stepByName(t, prepare, "Upload release candidate")
+
+	// Then
+	require.Equal(t, "90", scalarValue(t, mappingValue(t, upload, "with"), "retention-days"))
+	require.Equal(t, "read", scalarValue(t, mappingValue(t, prepare, "permissions"), "contents"))
+	require.Equal(t, "read", scalarValue(t, mappingValue(t, control, "permissions"), "contents"))
+	require.Contains(t, scalarValue(t, mappingValue(t, stepByName(t, control, "Upload candidate control receipt"), "with"), "path"), "CANDIDATE-RECEIPT.json")
+	for _, jobNode := range []*yaml.Node{verification, prepare, control} {
+		for _, step := range mappingValue(t, jobNode, "steps").Content {
+			if uses, ok := mappingValueIfPresent(step, "uses"); ok {
+				require.NotContains(t, uses.Value, "actions/attest")
+			}
+			if run, ok := mappingValueIfPresent(step, "run"); ok {
+				require.NotContains(t, run.Value, "make release-package")
+				require.NotContains(t, run.Value, "gh release")
+				require.NotContains(t, run.Value, "npm publish")
+			}
+		}
+	}
+}
+
 func Test_Workflows_pin_remote_actions_to_approved_commits(t *testing.T) {
 	// Given
 	ciWorkflow := loadWorkflow(t, "ci.yml")
