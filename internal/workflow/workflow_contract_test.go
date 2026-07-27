@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"os"
+	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -71,7 +72,7 @@ func Test_ReleaseWorkflow_validates_reviewed_tag_and_verifies_all_native_targets
 	require.Contains(t, gate, "commits/$commit/pulls")
 	require.Contains(t, gate, "compare/$commit...master")
 	require.Contains(t, gate, "v$version")
-	require.Equal(t, []string{"validate"}, scalarOrSequenceValues(t, mappingValue(t, verification, "needs")))
+	require.Equal(t, []string{"validate", "fresh-guard"}, scalarOrSequenceValues(t, mappingValue(t, verification, "needs")))
 	require.Equal(t, "false", scalarValue(t, mappingValue(t, verification, "strategy"), "fail-fast"))
 
 	include := mappingValue(t, mappingValue(t, mappingValue(t, verification, "strategy"), "matrix"), "include")
@@ -89,43 +90,6 @@ func Test_ReleaseWorkflow_validates_reviewed_tag_and_verifies_all_native_targets
 	require.Equal(t, `test "$(opencode --version)" = "1.18.4"`, openCodeCheck)
 	require.NotContains(t, openCodeCheck, "install --global")
 	require.Equal(t, "make verify", scalarValue(t, stepByName(t, verification, "Run complete verification"), "run"))
-}
-
-func Test_ReleaseWorkflow_publishes_verified_artifact_without_rebuilding(t *testing.T) {
-	// Given
-	workflow := loadWorkflow(t, "release.yml")
-	verification := job(t, workflow, "verify")
-	publication := job(t, workflow, "publish")
-
-	// When
-	upload := stepByName(t, verification, "Upload verified release bundles")
-	download := stepByName(t, publication, "Download verified release bundles")
-	publishCommand := scalarValue(t, stepByName(t, publication, "Publish private GitHub release"), "run")
-
-	// Then
-	_, conditionalUpload := mappingValueIfPresent(upload, "if")
-	require.False(t, conditionalUpload)
-	require.Equal(t, "3", scalarValue(t, mappingValue(t, upload, "with"), "retention-days"))
-	require.Equal(t, "error", scalarValue(t, mappingValue(t, upload, "with"), "if-no-files-found"))
-	require.Contains(t, scalarValue(t, mappingValue(t, upload, "with"), "name"), "matrix.target")
-	require.Contains(t, scalarValue(t, mappingValue(t, upload, "with"), "path"), "matrix.target")
-	require.Equal(t, downloadAction, scalarValue(t, download, "uses"))
-	require.Contains(t, scalarValue(t, mappingValue(t, download, "with"), "pattern"), "release-bundle-")
-	require.Equal(t, "true", scalarValue(t, mappingValue(t, download, "with"), "merge-multiple"))
-	require.ElementsMatch(t, []string{"validate", "verify"}, scalarOrSequenceValues(t, mappingValue(t, publication, "needs")))
-	require.Equal(t, "write", scalarValue(t, mappingValue(t, publication, "permissions"), "contents"))
-	require.Contains(t, publishCommand, "sha256sum agent-managed-bash-*.tar.gz > SHA256SUMS")
-	require.Contains(t, publishCommand, "sha256sum -c SHA256SUMS")
-	require.Contains(t, publishCommand, "git/ref/tags/$RELEASE_TAG")
-	require.Contains(t, publishCommand, `test "$tag_sha" = "$VERIFIED_COMMIT"`)
-	require.Contains(t, publishCommand, "gh release create")
-	require.Contains(t, publishCommand, "--verify-tag")
-	for _, step := range mappingValue(t, publication, "steps").Content {
-		if run, ok := mappingValueIfPresent(step, "run"); ok {
-			require.NotContains(t, run.Value, "make release-package")
-			require.NotContains(t, run.Value, "make verify")
-		}
-	}
 }
 
 func Test_ReleaseWorkflow_creates_candidate_artifacts_without_external_publication(t *testing.T) {
@@ -169,16 +133,26 @@ func Test_Workflows_pin_remote_actions_to_approved_commits(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func Test_Makefile_includes_workflow_contract_in_complete_verification(t *testing.T) {
+func Test_Makefile_complete_verification_runs_required_release_contracts(t *testing.T) {
 	// Given
 	makefile, err := os.ReadFile("../../Makefile")
 	require.NoError(t, err)
+	recipe := regexp.MustCompile(`(?m)^verify:\n(?:\t.*\n)+`).FindString(string(makefile))
 
 	// When
-	contents := string(makefile)
+	requiredTargets := []string{
+		"workflow-test",
+		"npm-package-test",
+		"public-install-test",
+		"release-candidate-test",
+		"release-publish-test",
+	}
 
 	// Then
-	require.Contains(t, contents, "workflow-test:")
-	require.Contains(t, contents, "go tool actionlint")
-	require.Contains(t, contents, "$(MAKE) --no-print-directory workflow-test")
+	require.NotEmpty(t, recipe)
+	for _, target := range requiredTargets {
+		require.Contains(t, string(makefile), target+":")
+		require.Contains(t, recipe, "$(MAKE) --no-print-directory "+target)
+	}
+	require.Contains(t, string(makefile), "go tool actionlint")
 }
