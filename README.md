@@ -282,7 +282,8 @@ OpenCode can hide its built-in Bash tool while the plugin retains command permis
 ## Go runner security model
 
 - OpenCode supplies the session ID, physical workspace path, and working directory. Model arguments cannot override them.
-- Stateful requests must match the host-owned context. Cross-workspace reads look like missing jobs, and only the owner session can mutate a job.
+- Stateful requests must match the host-owned context. Cross-workspace reads look like missing jobs. Control and removal mutations require the owner session; a read-authorized same-workspace observer may persist only its own wait cursor.
+- Private workspace files, descriptor-relative access, and ownership checks prevent accidental crossover and unsafe filesystem substitution, but they are not a security boundary against another process running as the same operating-system user.
 - The runner removes trusted host variables before it starts the requested shell command.
 - The installer rejects symlink-substituted path components, shared writable destinations, foreign CLI registrations, and foreign paths at the legacy auto-discovery location.
 - Install, update, and uninstall share one per-user lock. Release publication and the `current` switch use no-replace or atomic rename operations.

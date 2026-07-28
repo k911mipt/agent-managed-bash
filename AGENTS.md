@@ -40,7 +40,8 @@ Keep Go and TypeScript consumers on the same fixture manifest under `fixtures/v1
 - Wait and idle checkpoints return control without terminating a job. For Go-runner jobs, hard timeout, explicit cancellation, and output-limit enforcement terminate the process group. The tmux fallback does not support output-limit enforcement and performs best-effort pane-process termination.
 - Preserve whole-process-group cleanup for Go-runner jobs, including descendants that ignore `SIGTERM`. Do not claim that guarantee for the reduced tmux fallback.
 - For native-tool and plugin-managed CLI jobs, treat session ID, workspace path, and cwd from the host as trusted context. Model-supplied values must not override them.
-- Keep Go-runner workspace paths physical, canonical, and symlink-safe. Cross-workspace reads look like missing jobs; mutations require the owner session.
+- Keep Go-runner workspace paths physical, canonical, and symlink-safe. Cross-workspace reads look like missing jobs. Control and removal mutations require the owner session; a read-authorized same-workspace observer may persist only its own wait cursor.
+- Treat Go-runner workspace metadata as protection against accidental crossover and unsafe filesystem substitution, not as a security boundary against another process running as the same operating-system user.
 - The tmux fallback derives workspace identity from physical `pwd -P` and uses caller-supplied session identity only to prevent accidental crossover. Do not describe that same-user tmux metadata as a security boundary.
 - The standalone skill's CLI adapter also receives caller-supplied session/workspace identity. Do not describe it as equivalent to the OpenCode plugin's trusted-context boundary.
 - The plugin must fail with a structured tool error when the binary is missing, malformed, or incompatible. It must never fall back to built-in Bash.
