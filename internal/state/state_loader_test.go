@@ -12,7 +12,7 @@ import (
 
 func Test_PersistedStateValidator_rejects_malformed_structural_and_semantic_state(t *testing.T) {
 	validator := newTestPersistedStateValidator(t)
-	workspace := filepath.Join(t.TempDir(), "workspace")
+	workspace := filepath.Join(testWorkspaceRoot(t, os.TempDir()), "workspace")
 	require.NoError(t, os.Mkdir(workspace, 0o700))
 	tests := []struct {
 		name string
@@ -35,7 +35,7 @@ func Test_PersistedStateValidator_rejects_malformed_structural_and_semantic_stat
 
 func Test_PersistedStateValidator_accepts_valid_raw_state(t *testing.T) {
 	validator := newTestPersistedStateValidator(t)
-	workspace := filepath.Join(t.TempDir(), "workspace")
+	workspace := filepath.Join(testWorkspaceRoot(t, os.TempDir()), "workspace")
 	require.NoError(t, os.Mkdir(workspace, 0o700))
 	raw := bytes.ReplaceAll(readStateFixture(t, "valid/state-running.json"), []byte("/workspace"), []byte(workspace))
 
@@ -48,7 +48,7 @@ func Test_PersistedStateValidator_accepts_valid_raw_state(t *testing.T) {
 func Test_PersistedStateValidator_binds_stored_paths_to_host_workspace(t *testing.T) {
 	// Given
 	validator := newTestPersistedStateValidator(t)
-	base := t.TempDir()
+	base := testWorkspaceRoot(t, os.TempDir())
 	workspace := filepath.Join(base, "workspace")
 	otherWorkspace := filepath.Join(base, "other-workspace")
 	cwd := filepath.Join(workspace, "cwd")
@@ -86,7 +86,7 @@ func Test_PersistedStateValidator_binds_stored_paths_to_host_workspace(t *testin
 func Test_PersistedStateValidator_rejects_symlinked_stored_cwd(t *testing.T) {
 	// Given
 	validator := newTestPersistedStateValidator(t)
-	workspace := filepath.Join(t.TempDir(), "workspace")
+	workspace := filepath.Join(testWorkspaceRoot(t, os.TempDir()), "workspace")
 	realCwd := filepath.Join(workspace, "real-cwd")
 	linkedCwd := filepath.Join(workspace, "linked-cwd")
 	require.NoError(t, os.MkdirAll(realCwd, 0o700))
@@ -108,7 +108,7 @@ func Test_PersistedStateValidator_rejects_symlinked_stored_cwd(t *testing.T) {
 func Test_PersistedStateValidator_rejects_symlinked_stored_workspace(t *testing.T) {
 	// Given
 	validator := newTestPersistedStateValidator(t)
-	base := t.TempDir()
+	base := testWorkspaceRoot(t, os.TempDir())
 	realWorkspace := filepath.Join(base, "real-workspace")
 	linkedWorkspace := filepath.Join(base, "linked-workspace")
 	require.NoError(t, os.Mkdir(realWorkspace, 0o700))

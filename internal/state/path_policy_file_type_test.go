@@ -14,7 +14,7 @@ import (
 
 func Test_OpenWorkspacePath_rejects_FIFO_without_blocking(t *testing.T) {
 	policy := loadTestPolicy(t)
-	workspace := filepath.Join(t.TempDir(), "workspace")
+	workspace := filepath.Join(testWorkspaceRoot(t, os.TempDir()), "workspace")
 	require.NoError(t, os.Mkdir(workspace, 0o700))
 	fifo := filepath.Join(workspace, "fifo")
 	require.NoError(t, unix.Mkfifo(fifo, 0o600))
@@ -27,7 +27,7 @@ func Test_OpenWorkspacePath_rejects_FIFO_without_blocking(t *testing.T) {
 
 func Test_OpenWorkspacePath_rejects_unix_socket(t *testing.T) {
 	policy := loadTestPolicy(t)
-	workspace := filepath.Join(t.TempDir(), "workspace")
+	workspace := filepath.Join(testWorkspaceRoot(t, os.TempDir()), "workspace")
 	require.NoError(t, os.Mkdir(workspace, 0o700))
 	socketPath := filepath.Join(workspace, "socket")
 	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: socketPath, Net: "unix"})
@@ -42,7 +42,7 @@ func Test_OpenWorkspacePath_rejects_unix_socket(t *testing.T) {
 
 func Test_OpenWorkspacePath_rejects_all_directories(t *testing.T) {
 	policy := loadTestPolicy(t)
-	workspace := filepath.Join(t.TempDir(), "workspace")
+	workspace := filepath.Join(testWorkspaceRoot(t, os.TempDir()), "workspace")
 	nested := filepath.Join(workspace, "nested")
 	require.NoError(t, os.MkdirAll(nested, 0o700))
 
