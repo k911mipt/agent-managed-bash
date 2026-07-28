@@ -1,8 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtemp, readFile, readdir, rm, watch } from "node:fs/promises"
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises"
 import { basename, dirname, join, resolve } from "node:path"
 import { tmpdir } from "node:os"
 import { writeCandidateFixture } from "./release-candidate-fixtures.test"
+import { waitForReady } from "./release-candidate-readiness.test-helper"
+import "./release-candidate-readiness.interruption.test"
+import "./release-candidate-transaction-state.test"
+import "./release-candidate-transaction-hooks.interruption.test"
 
 const schemaPath = resolve(import.meta.dir, "../schemas/spdx-schema.json")
 const scriptPath = resolve(import.meta.dir, "release-candidate.ts")
@@ -17,35 +21,9 @@ const environment = {
   RELEASE_WORKFLOW_BLOB: "0123456789abcdef0123456789abcdef01234567",
 } as const
 
-type ReadyState = {
-  readonly childPID: number
-  readonly pid: number
-  readonly stage: string
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-async function waitForReady(path: string): Promise<ReadyState> {
-  const readReady = async (): Promise<ReadyState> => {
-    const value: unknown = JSON.parse(await readFile(path, "utf8"))
-    if (isRecord(value)
-      && typeof value["childPID"] === "number" && typeof value["pid"] === "number" && typeof value["stage"] === "string") {
-      return { childPID: value["childPID"], pid: value["pid"], stage: value["stage"] }
-    }
-    throw new Error("invalid release-candidate readiness marker")
-  }
-  if (await Bun.file(path).exists()) {
-    return readReady()
-  }
-  const events = watch(dirname(path), { signal: AbortSignal.timeout(5_000) })
-  for await (const event of events) {
-    if (event.filename === basename(path) && await Bun.file(path).exists()) {
-      return readReady()
-    }
-  }
-  throw new Error("release-candidate readiness marker timed out")
+type ReadinessPaths = {
+  readonly readyPath?: string
+  readonly stagedReadyPath?: string
 }
 
 async function stdoutText(childProcess: ReturnType<typeof Bun.spawn>): Promise<string> {
@@ -55,15 +33,18 @@ async function stdoutText(childProcess: ReturnType<typeof Bun.spawn>): Promise<s
   return new Response(childProcess.stdout).text()
 }
 
-async function runCommand(arguments_: readonly string[], root: string, readyPath?: string): Promise<ReturnType<typeof Bun.spawn>> {
+async function runCommand(arguments_: readonly string[], root: string, readiness?: ReadinessPaths): Promise<ReturnType<typeof Bun.spawn>> {
   return Bun.spawn({
     cmd: [process.execPath, scriptPath, ...arguments_],
     env: {
       ...process.env,
       ...environment,
-      ...(readyPath === undefined ? {} : {
-        RELEASE_CANDIDATE_TEST_CHILD_PID_FILE: `${readyPath}.child`,
-        RELEASE_CANDIDATE_TEST_READY_FILE: readyPath,
+      ...(readiness?.readyPath === undefined ? {} : {
+        RELEASE_CANDIDATE_TEST_CHILD_PID_FILE: `${readiness.readyPath}.child`,
+        RELEASE_CANDIDATE_TEST_READY_FILE: readiness.readyPath,
+      }),
+      ...(readiness?.stagedReadyPath === undefined ? {} : {
+        RELEASE_CANDIDATE_TEST_READY_STAGE_FILE: readiness.stagedReadyPath,
       }),
     },
     stderr: "pipe",
@@ -88,6 +69,11 @@ async function assertDirectoryExists(path: string): Promise<void> {
   await expect(readdir(path)).resolves.toEqual(expect.any(Array))
 }
 
+async function assertNoReadyMarkerStages(path: string): Promise<void> {
+  const prefix = `.${basename(path)}-`
+  expect((await readdir(dirname(path))).some((entry) => entry.startsWith(prefix) && entry.endsWith(".tmp"))).toBeFalse()
+}
+
 describe("release candidate interruption cleanup", () => {
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
     test(`cleans every assembly stage and reaps children on ${signal}`, async () => {
@@ -98,8 +84,9 @@ describe("release candidate interruption cleanup", () => {
       const childProcess = await runCommand([
         "assemble", "--producers", join(root, "producers"), "--relations", join(root, "relations"),
         "--output", join(root, "candidate"), "--schema", schemaPath,
-      ], root, readyPath)
+      ], root, { readyPath })
       const ready = await waitForReady(readyPath)
+      await assertNoReadyMarkerStages(readyPath)
 
       try {
         // When
@@ -134,8 +121,9 @@ describe("release candidate interruption cleanup", () => {
         "metadata", "--candidate", join(root, "candidate"), "--artifact-id", "123", "--artifact-digest", "a".repeat(64),
         "--producers", join(root, "producers"), "--relations", join(root, "relations"), "--schema", schemaPath,
         "--output", join(root, "candidate-metadata.json"),
-      ], root, readyPath)
+      ], root, { readyPath })
       const ready = await waitForReady(readyPath)
+      await assertNoReadyMarkerStages(readyPath)
 
       try {
         // When
@@ -177,8 +165,9 @@ describe("release candidate interruption cleanup", () => {
         "control", "--candidate", join(root, "candidate"), "--artifact-id", "123", "--artifact-digest", "a".repeat(64),
         "--metadata", join(root, "candidate-metadata.json"), "--output", join(root, "control", "CANDIDATE-RECEIPT.json"),
         "--producers", join(root, "producers"), "--relations", join(root, "relations"), "--schema", schemaPath,
-      ], root, readyPath)
+      ], root, { readyPath })
       const ready = await waitForReady(readyPath)
+      await assertNoReadyMarkerStages(readyPath)
 
       try {
         // When
@@ -194,6 +183,46 @@ describe("release candidate interruption cleanup", () => {
         await expect(Bun.file(join(root, "candidate-metadata.json")).exists()).resolves.toBeTrue()
         await assertTerminated(ready.pid)
         await assertTerminated(ready.childPID)
+      } finally {
+        await rm(root, { force: true, recursive: true })
+      }
+    })
+  }
+
+  for (const signal of ["SIGTERM", "SIGINT"] as const) {
+    test(`removes readiness staging before rename on ${signal}`, async () => {
+      // Given
+      const root = await mkdtemp(join(tmpdir(), "agent-managed-bash-ready-stage-interrupt-"))
+      const readyPath = join(root, "metadata-ready.json")
+      const stagedReadyPath = join(root, "metadata-before-rename.json")
+      await writeCandidateFixture(root)
+      const assembly = await runCommand([
+        "assemble", "--producers", join(root, "producers"), "--relations", join(root, "relations"),
+        "--output", join(root, "candidate"), "--schema", schemaPath,
+      ], root)
+      expect(await assembly.exited).toBe(0)
+      const childProcess = await runCommand([
+        "metadata", "--candidate", join(root, "candidate"), "--artifact-id", "123", "--artifact-digest", "a".repeat(64),
+        "--producers", join(root, "producers"), "--relations", join(root, "relations"), "--schema", schemaPath,
+        "--output", join(root, "candidate-metadata.json"),
+      ], root, { readyPath, stagedReadyPath })
+      const staged = await waitForReady(stagedReadyPath)
+
+      try {
+        // When
+        childProcess.kill(signal)
+        const [exitCode, stdout] = await Promise.all([childProcess.exited, stdoutText(childProcess)])
+
+        // Then
+        expect(exitCode).toBe(signal === "SIGTERM" ? 143 : 130)
+        expect(stdout).toBe("")
+        await expect(Bun.file(readyPath).exists()).resolves.toBeFalse()
+        await assertNoReadyMarkerStages(readyPath)
+        await expect(Bun.file(staged.stage).exists()).resolves.toBeFalse()
+        await expect(Bun.file(join(root, "candidate-metadata.json")).exists()).resolves.toBeFalse()
+        await assertDirectoryExists(join(root, "candidate"))
+        await assertTerminated(staged.pid)
+        await assertTerminated(staged.childPID)
       } finally {
         await rm(root, { force: true, recursive: true })
       }
