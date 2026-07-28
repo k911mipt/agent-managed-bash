@@ -85,7 +85,7 @@ async function parallelCancelScenario(): Promise<void> {
       ])
     }
     if (count === 4) return toolCalls([
-      { id: "finish-first", input: { action: "wait", job_id: jobs[0], timeout_ms: 10_000, idle_timeout_ms: 10_000 } },
+      { id: "finish-first", input: { action: "wait", job_id: jobs[0], timeout_ms: 15_000, idle_timeout_ms: 10_000 } },
     ])
     return textResponse("parallel controls complete")
   })
