@@ -132,6 +132,13 @@ func lockStateFile(ctx context.Context, file *os.File, timeout time.Duration, po
 	}
 }
 
+func lockStateFileBlocking(file *os.File) error {
+	if err := unix.Flock(fileFD(file), unix.LOCK_EX); err != nil {
+		return fmt.Errorf("lock state file: %w", err)
+	}
+	return nil
+}
+
 func unlockFile(file *os.File) error {
 	if err := unix.Flock(fileFD(file), unix.LOCK_UN); err != nil {
 		return fmt.Errorf("unlock file: %w", err)

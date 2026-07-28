@@ -21,7 +21,7 @@ func (store *Store) publishExecutionTerminal(
 	if lease.file == nil || lease.jobID != jobID || lease.store != store {
 		return ErrInvalidStateUpdate
 	}
-	job, err := store.openLockedJob(jobID)
+	job, err := store.openLockedExecutionTerminalJob(jobID)
 	if err != nil {
 		return err
 	}

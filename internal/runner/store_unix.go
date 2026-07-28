@@ -53,6 +53,7 @@ func OpenStoreAt(invocation state.TrustedInvocation, contracts contract.Contract
 	store.closeJob = func(file *os.File) error { return file.Close() }
 	store.lockTimeout = defaultStateLockTimeout
 	store.lockPoll = defaultStateLockPoll
+	store.acquireTerminalStateLock = lockStateFileBlocking
 	return store, nil
 }
 

@@ -29,6 +29,16 @@ func (store *Store) openLockedJob(jobID generated.JobID) (*lockedJob, error) {
 }
 
 func (store *Store) openLockedJobContext(ctx context.Context, jobID generated.JobID) (*lockedJob, error) {
+	return store.openLockedJobWith(jobID, func(file *os.File) error {
+		return lockStateFile(ctx, file, store.lockTimeout, store.lockPoll)
+	})
+}
+
+func (store *Store) openLockedExecutionTerminalJob(jobID generated.JobID) (*lockedJob, error) {
+	return store.openLockedJobWith(jobID, store.acquireTerminalStateLock)
+}
+
+func (store *Store) openLockedJobWith(jobID generated.JobID, acquireLock func(*os.File) error) (*lockedJob, error) {
 	if !validJobID(jobID) {
 		return nil, ErrInvalidJobID
 	}
@@ -40,7 +50,7 @@ func (store *Store) openLockedJobContext(ctx context.Context, jobID generated.Jo
 	if err != nil {
 		return nil, errors.Join(err, directory.Close())
 	}
-	if err := lockStateFile(ctx, stateLock, store.lockTimeout, store.lockPoll); err != nil {
+	if err := acquireLock(stateLock); err != nil {
 		return nil, errors.Join(err, stateLock.Close(), directory.Close())
 	}
 	raw, err := readPrivateFileAt(directory, "state.json", maximumStateBytes)
