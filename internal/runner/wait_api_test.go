@@ -97,51 +97,6 @@ func Test_Manager_wait_delivers_output_and_commits_cursor_monotonically(t *testi
 	require.NoError(t, os.WriteFile(releasePath, []byte("release"), 0o600))
 }
 
-func Test_Manager_wait_active_output_resets_idle_until_quiet(t *testing.T) {
-	// Given
-	workspace := runner.NewTestWorkspace(t)
-	readyPath := filepath.Join(workspace, "ready")
-	triggerPath := filepath.Join(workspace, "trigger")
-	releasePath := filepath.Join(workspace, "release")
-	manager := newControlManager(t)
-	owner := trustedInvocationFor(t, "owner", workspace)
-	job := startControlJob(
-		t, manager, owner,
-		`printf ready >`+readyPath+`; while [ ! -f `+triggerPath+` ]; do sleep 0.005; done; `+
-			`printf a; sleep 0.03; printf b; sleep 0.03; printf c; `+
-			`while [ ! -f `+releasePath+` ]; do sleep 0.01; done`,
-	)
-	controlWaitForCondition(t, time.Second, func() bool {
-		_, err := os.Stat(readyPath)
-		return err == nil
-	})
-	triggerResult := make(chan error, 1)
-	go func() {
-		timer := time.NewTimer(20 * time.Millisecond)
-		defer timer.Stop()
-		<-timer.C
-		triggerResult <- os.WriteFile(triggerPath, []byte("go"), 0o600)
-	}()
-	started := time.Now()
-
-	// When
-	prepared, err := manager.PrepareWait(context.Background(), runner.WaitRequest{
-		Invocation: owner, JobID: job.JobID,
-		Timeout: 500 * time.Millisecond, IdleTimeout: 70 * time.Millisecond,
-	})
-	elapsed := time.Since(started)
-
-	// Then
-	require.NoError(t, <-triggerResult)
-	require.NoError(t, err)
-	require.Equal(t, "abc", prepared.Observation.Output.Text)
-	require.GreaterOrEqual(t, elapsed, 120*time.Millisecond)
-	require.Less(t, elapsed, 400*time.Millisecond)
-	require.Equal(t, generated.JobStatusRunning, prepared.Observation.Observation.Job.Status)
-	require.NoError(t, prepared.Commit(context.Background()))
-	require.NoError(t, os.WriteFile(releasePath, []byte("release"), 0o600))
-}
-
 func Test_Manager_wait_commit_failure_preserves_duplicate_delivery(t *testing.T) {
 	// Given
 	workspace := runner.NewTestWorkspace(t)

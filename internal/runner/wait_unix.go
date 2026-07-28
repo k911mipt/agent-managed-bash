@@ -60,6 +60,9 @@ func (manager *Manager) PrepareWait(ctx context.Context, request WaitRequest) (p
 		}
 		if metadata.Job.Status != generated.JobStatusRunning || !now.Before(absoluteDeadline) ||
 			!now.Before(idleDeadline) {
+			if manager.beforeWaitOutput != nil {
+				manager.beforeWaitOutput()
+			}
 			observation, err := store.waitOutput(waitContext, request.JobID, resolved)
 			if err != nil {
 				if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
@@ -69,7 +72,14 @@ func (manager *Manager) PrepareWait(ctx context.Context, request WaitRequest) (p
 			if err != nil {
 				return nil, err
 			}
-			return newPreparedWait(manager, request, observation, resolved, now), nil
+			returnedAt := time.Now()
+			if observation.Observation.Job.Status == generated.JobStatusRunning && returnedAt.Before(absoluteDeadline) &&
+				observation.Observation.Job.CapturedBytes > lastCaptured {
+				lastCaptured = observation.Observation.Job.CapturedBytes
+				idleDeadline = returnedAt.Add(idle)
+				continue
+			}
+			return newPreparedWait(manager, request, observation, resolved, returnedAt), nil
 		}
 		pause := min(manager.config.PollInterval, time.Until(absoluteDeadline), time.Until(idleDeadline))
 		timer := time.NewTimer(max(pause, time.Millisecond))
