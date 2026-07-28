@@ -7,13 +7,14 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/k911mipt/agent-managed-bash/internal/protocol/generated"
 	"github.com/k911mipt/agent-managed-bash/internal/state"
 )
 
 func (store *Store) status(ctx context.Context, jobID generated.JobID) (observation generated.JobObservation, err error) {
-	job, err := store.openObservedJob(ctx, jobID)
+	job, err := store.openObservedSnapshot(ctx, jobID)
 	if err != nil {
 		return generated.JobObservation{}, err
 	}
@@ -22,7 +23,7 @@ func (store *Store) status(ctx context.Context, jobID generated.JobID) (observat
 }
 
 func (store *Store) output(ctx context.Context, request OutputRequest) (observation generated.OutputObservation, err error) {
-	job, err := store.openObservedJob(ctx, request.JobID)
+	job, err := store.openObservedSnapshot(ctx, request.JobID)
 	if err != nil {
 		return generated.OutputObservation{}, err
 	}
@@ -30,11 +31,46 @@ func (store *Store) output(ctx context.Context, request OutputRequest) (observat
 	payload := generated.OutputPayload{
 		JobID: request.JobID, StartCursorBytes: request.StartCursorBytes, EndCursorBytes: request.EndCursorBytes,
 	}
-	return store.outputLocked(job, payload)
+	return store.outputSnapshot(job, payload)
 }
 
-func (store *Store) openObservedJob(ctx context.Context, jobID generated.JobID) (*lockedJob, error) {
-	job, err := store.openLockedJobContext(ctx, jobID)
+func (store *Store) openObservedSnapshot(ctx context.Context, jobID generated.JobID) (*snapshotJob, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	job, err := store.openAuthorizedSnapshot(jobID)
+	if err != nil {
+		return nil, err
+	}
+	if job.state.Job.Status != generated.JobStatusRunning {
+		return job, nil
+	}
+	deadline := time.Now().Add(store.lockTimeout)
+	if err := store.waitForTerminalIntent(ctx, jobID, deadline); err != nil {
+		return nil, errors.Join(err, job.close())
+	}
+	if err := job.close(); err != nil {
+		return nil, err
+	}
+	job, err = store.openAuthorizedSnapshot(jobID)
+	if err != nil || job.state.Job.Status != generated.JobStatusRunning {
+		return job, err
+	}
+	runnerActive, err := store.reconcileRunnerState(ctx, jobID, deadline)
+	if err != nil || runnerActive {
+		if err != nil {
+			return nil, errors.Join(err, job.close())
+		}
+		return job, nil
+	}
+	if err := job.close(); err != nil {
+		return nil, err
+	}
+	return store.openAuthorizedSnapshot(jobID)
+}
+
+func (store *Store) openAuthorizedSnapshot(jobID generated.JobID) (*snapshotJob, error) {
+	job, err := store.openSnapshotJob(jobID)
 	if err != nil {
 		return nil, err
 	}
@@ -44,17 +80,14 @@ func (store *Store) openObservedJob(ctx context.Context, jobID generated.JobID) 
 	}); !decision.Allowed {
 		return nil, errors.Join(decisionError(decision.Code), job.close())
 	}
-	if err := store.reconcileRunnerLostLocked(job, jobID); err != nil {
-		return nil, errors.Join(err, job.close())
-	}
 	return job, nil
 }
 
-func (store *Store) outputLocked(job *lockedJob, payload generated.OutputPayload) (generated.OutputObservation, error) {
+func (store *Store) outputSnapshot(job *snapshotJob, payload generated.OutputPayload) (generated.OutputObservation, error) {
 	if store.beforeOutputRead != nil {
 		store.beforeOutputRead()
 	}
-	raw, err := readOutputLocked(job)
+	raw, err := readOutputSnapshot(job)
 	if err != nil {
 		return generated.OutputObservation{}, err
 	}

@@ -3,7 +3,7 @@
 package runner
 
 import (
-	"os"
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -26,9 +26,8 @@ func Test_publishExecutionTerminal_waits_for_state_lock_instead_of_abandoning_ru
 	_, err = store.openLockedJob(initial.Job.JobID)
 	require.ErrorIs(t, err, ErrStateLockTimeout)
 	terminalLockStarted := make(chan struct{})
-	store.acquireTerminalStateLock = func(file *os.File) error {
+	store.afterTerminalIntent = func() {
 		close(terminalLockStarted)
-		return lockStateFileBlocking(file)
 	}
 	signal := int(unix.SIGKILL)
 	result := make(chan error, 1)
@@ -66,40 +65,54 @@ func Test_publishExecutionTerminal_completes_with_aggressive_load_observers(t *t
 	require.NoError(t, err)
 	require.True(t, appendResult.LimitReached)
 	const observers = 16
-	const loadsPerObserver = 64
 	ready := make(chan struct{}, observers)
 	start := make(chan struct{})
 	observerResults := make(chan error, observers)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 	var observerGroup sync.WaitGroup
 	for range observers {
 		observerGroup.Add(1)
 		go func() {
 			defer observerGroup.Done()
-			ready <- struct{}{}
 			<-start
-			for range loadsPerObserver {
-				if _, err := store.Load(initial.Job.JobID); err != nil {
+			observed := false
+			for {
+				snapshot, err := store.Load(initial.Job.JobID)
+				if err != nil {
 					observerResults <- err
 					return
 				}
+				if !observed {
+					ready <- struct{}{}
+					observed = true
+				}
+				if snapshot.State.Job.Status != generated.JobStatusRunning {
+					observerResults <- nil
+					return
+				}
+				select {
+				case <-ctx.Done():
+					observerResults <- ctx.Err()
+					return
+				default:
+				}
 			}
-			observerResults <- nil
 		}()
 	}
+	close(start)
 	for range observers {
 		<-ready
 	}
 	signal := int(unix.SIGKILL)
 	terminalResult := make(chan error, 1)
 	go func() {
-		<-start
 		terminalResult <- store.publishExecutionTerminal(initial.Job.JobID, executionOutcome{
 			cause: causeOutputLimit, wait: shellWaitResult{signal: &signal},
 		}, lease)
 	}()
 
 	// When
-	close(start)
 	observerGroup.Wait()
 
 	// Then

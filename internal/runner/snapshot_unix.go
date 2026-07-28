@@ -12,16 +12,19 @@ import (
 )
 
 func (store *Store) Load(jobID generated.JobID) (snapshot Snapshot, err error) {
-	job, err := store.openLockedJob(jobID)
-	return store.loadLockedJob(job, err)
+	job, err := store.openSnapshotJob(jobID)
+	return store.loadSnapshotJob(job, err)
 }
 
 func (store *Store) loadContext(ctx context.Context, jobID generated.JobID) (snapshot Snapshot, err error) {
-	job, err := store.openLockedJobContext(ctx, jobID)
-	return store.loadLockedJob(job, err)
+	if err := ctx.Err(); err != nil {
+		return Snapshot{}, err
+	}
+	job, err := store.openSnapshotJob(jobID)
+	return store.loadSnapshotJob(job, err)
 }
 
-func (store *Store) loadLockedJob(job *lockedJob, openErr error) (snapshot Snapshot, err error) {
+func (store *Store) loadSnapshotJob(job *snapshotJob, openErr error) (snapshot Snapshot, err error) {
 	if openErr != nil {
 		return Snapshot{}, openErr
 	}
@@ -54,28 +57,9 @@ func (store *Store) publishTerminal(
 	next generated.PersistedJobState,
 	lease *runnerLease,
 ) (err error) {
-	if lease == nil {
-		return ErrInvalidStateUpdate
-	}
-	lease.mu.Lock()
-	defer lease.mu.Unlock()
-	if lease.file == nil || lease.jobID != jobID || lease.store != store {
-		return ErrInvalidStateUpdate
-	}
-	job, err := store.openLockedJob(jobID)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		err = errors.Join(err, job.close())
-	}()
-	if next.Job.Status == job.state.Job.Status || !transitionAllowed(store.contracts.Policy(), job.state, next) {
-		return ErrInvalidStateUpdate
-	}
-	if err := store.publishStateLocked(job, jobID, next); err != nil {
-		return err
-	}
-	return lease.releaseLocked()
+	return store.publishTerminalState(jobID, lease, func(generated.PersistedJobState) (generated.PersistedJobState, error) {
+		return next, nil
+	})
 }
 
 func (store *Store) publishStateLocked(

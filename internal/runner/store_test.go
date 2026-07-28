@@ -293,7 +293,7 @@ func requirePrivateLayout(t *testing.T, workspace string, jobID generated.JobID)
 		require.NoError(t, err)
 		require.Equal(t, os.FileMode(0o700), info.Mode().Perm())
 	}
-	for _, name := range []string{"state.json", "output.log", "runtime.json", "state.lock", "runner.lock"} {
+	for _, name := range []string{"state.json", "output.log", "runtime.json", "state.lock", "runner.lock", "recovery.lock"} {
 		info, err := os.Stat(filepath.Join(jobPath(workspace, jobID), name))
 		require.NoError(t, err)
 		require.True(t, info.Mode().IsRegular())

@@ -38,38 +38,46 @@ func entryExists(directory *os.File, name string) (bool, error) {
 	return true, nil
 }
 
-func removeDirectoryContents(directory *os.File) error {
+type directoryContentsRemoval struct {
+	emptied bool
+}
+
+func removeDirectoryContents(
+	directory *os.File,
+	syncDirectory func(*os.File) error,
+) (directoryContentsRemoval, error) {
 	duplicatedFD, err := duplicateCloseOnExec(directory)
 	if err != nil {
-		return fmt.Errorf("duplicate directory descriptor: %w", err)
+		return directoryContentsRemoval{}, fmt.Errorf("duplicate directory descriptor: %w", err)
 	}
 	reader, err := fileFromFD(duplicatedFD, "remove-directory")
 	if err != nil {
-		return err
+		return directoryContentsRemoval{}, err
 	}
 	entries, readErr := reader.ReadDir(-1)
 	closeErr := reader.Close()
 	if readErr != nil || closeErr != nil {
-		return errors.Join(fmt.Errorf("read directory: %w", readErr), closeErr)
+		return directoryContentsRemoval{}, errors.Join(fmt.Errorf("read directory: %w", readErr), closeErr)
 	}
 	for _, entry := range entries {
 		var stat unix.Stat_t
 		if err := unix.Fstatat(fileFD(directory), entry.Name(), &stat, unix.AT_SYMLINK_NOFOLLOW); err != nil {
-			return fmt.Errorf("inspect removal entry %q: %w", entry.Name(), err)
+			return directoryContentsRemoval{}, fmt.Errorf("inspect removal entry %q: %w", entry.Name(), err)
 		}
 		if stat.Mode&unix.S_IFMT == unix.S_IFDIR {
-			return fmt.Errorf("remove nested directory %q: %w", entry.Name(), ErrUnsafeFilesystem)
+			return directoryContentsRemoval{}, fmt.Errorf("remove nested directory %q: %w", entry.Name(), ErrUnsafeFilesystem)
 		}
 	}
 	for _, entry := range entries {
 		if err := unix.Unlinkat(fileFD(directory), entry.Name(), 0); err != nil {
-			return fmt.Errorf("remove entry %q: %w", entry.Name(), err)
+			return directoryContentsRemoval{}, fmt.Errorf("remove entry %q: %w", entry.Name(), err)
 		}
 	}
-	if err := directory.Sync(); err != nil {
-		return fmt.Errorf("sync emptied directory: %w", err)
+	result := directoryContentsRemoval{emptied: true}
+	if err := syncDirectory(directory); err != nil {
+		return result, fmt.Errorf("sync emptied directory: %w", err)
 	}
-	return nil
+	return result, nil
 }
 
 func duplicateCloseOnExec(file *os.File) (int, error) {
