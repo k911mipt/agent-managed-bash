@@ -16,7 +16,7 @@ import (
 
 func Test_Manager_bounds_startup_failure_without_publishing_job_or_command_argv(t *testing.T) {
 	// Given
-	workspace := t.TempDir()
+	workspace := runner.NewTestWorkspace(t)
 	invocation := trustedInvocation(t, workspace, workspace)
 	argumentsPath := filepath.Join(t.TempDir(), "arguments")
 	stalledExecutable := filepath.Join(t.TempDir(), "stalled-bootstrap")
@@ -48,7 +48,7 @@ func Test_Manager_bounds_startup_failure_without_publishing_job_or_command_argv(
 }
 
 func Test_Manager_bounds_initial_frame_write_by_startup_timeout(t *testing.T) {
-	workspace := t.TempDir()
+	workspace := runner.NewTestWorkspace(t)
 	invocation := trustedInvocation(t, workspace, workspace)
 	stalledExecutable := filepath.Join(t.TempDir(), "stalled-bootstrap")
 	require.NoError(t, os.WriteFile(stalledExecutable, []byte("#!/bin/sh\nexec sleep 10\n"), 0o700))
@@ -67,7 +67,7 @@ func Test_Manager_bounds_initial_frame_write_by_startup_timeout(t *testing.T) {
 }
 
 func Test_Manager_pre_cancelled_start_does_not_spawn_or_publish(t *testing.T) {
-	workspace := t.TempDir()
+	workspace := runner.NewTestWorkspace(t)
 	marker := filepath.Join(workspace, "marker")
 	invocation := trustedInvocation(t, workspace, workspace)
 	manager, err := runner.New(runner.Config{})
@@ -88,7 +88,7 @@ func Test_Manager_pre_cancelled_start_does_not_spawn_or_publish(t *testing.T) {
 
 func Test_Manager_classifies_missing_executable_as_startup_failure(t *testing.T) {
 	// Given
-	workspace := t.TempDir()
+	workspace := runner.NewTestWorkspace(t)
 	invocation := trustedInvocation(t, workspace, workspace)
 	manager, err := runner.New(runner.Config{Executable: filepath.Join(workspace, "missing-managed-bash")})
 	require.NoError(t, err)

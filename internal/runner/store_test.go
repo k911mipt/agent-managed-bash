@@ -193,7 +193,7 @@ func Test_Store_prepare_rejects_state_not_bound_to_trusted_invocation(t *testing
 
 func Test_Store_loads_job_after_trusted_cwd_is_removed(t *testing.T) {
 	// Given
-	workspace := filepath.Join(t.TempDir(), "workspace")
+	workspace := runner.NewTestWorkspace(t)
 	cwd := filepath.Join(workspace, "cwd")
 	require.NoError(t, os.MkdirAll(cwd, 0o700))
 	contracts, err := contract.Load()
@@ -222,8 +222,7 @@ func Test_Store_loads_job_after_trusted_cwd_is_removed(t *testing.T) {
 
 func newTestStore(t *testing.T) (*runner.Store, string) {
 	t.Helper()
-	workspace := filepath.Join(t.TempDir(), "workspace")
-	require.NoError(t, os.Mkdir(workspace, 0o700))
+	workspace := runner.NewTestWorkspace(t)
 	contracts, err := contract.Load()
 	require.NoError(t, err)
 	invocation, decision := contracts.Policy().BindTrustedInvocation(

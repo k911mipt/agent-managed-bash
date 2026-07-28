@@ -18,7 +18,7 @@ import (
 
 func Test_Manager_wait_idle_and_absolute_checkpoints_never_terminate_job(t *testing.T) {
 	// Given
-	workspace := t.TempDir()
+	workspace := runner.NewTestWorkspace(t)
 	manager := newControlManager(t)
 	owner := trustedInvocationFor(t, "owner", workspace)
 	job := startControlJob(t, manager, owner, "trap '' TERM; exec sleep 10")
@@ -56,7 +56,7 @@ func Test_Manager_wait_idle_and_absolute_checkpoints_never_terminate_job(t *test
 
 func Test_Manager_wait_delivers_output_and_commits_cursor_monotonically(t *testing.T) {
 	// Given
-	workspace := t.TempDir()
+	workspace := runner.NewTestWorkspace(t)
 	releasePath := filepath.Join(workspace, "release")
 	manager := newControlManager(t)
 	owner := trustedInvocationFor(t, "owner", workspace)
@@ -99,7 +99,7 @@ func Test_Manager_wait_delivers_output_and_commits_cursor_monotonically(t *testi
 
 func Test_Manager_wait_active_output_resets_idle_until_quiet(t *testing.T) {
 	// Given
-	workspace := t.TempDir()
+	workspace := runner.NewTestWorkspace(t)
 	readyPath := filepath.Join(workspace, "ready")
 	triggerPath := filepath.Join(workspace, "trigger")
 	releasePath := filepath.Join(workspace, "release")
@@ -144,7 +144,7 @@ func Test_Manager_wait_active_output_resets_idle_until_quiet(t *testing.T) {
 
 func Test_Manager_wait_commit_failure_preserves_duplicate_delivery(t *testing.T) {
 	// Given
-	workspace := t.TempDir()
+	workspace := runner.NewTestWorkspace(t)
 	manager := newControlManager(t)
 	owner := trustedInvocationFor(t, "owner", workspace)
 	job := startControlJob(t, manager, owner, "printf payload")

@@ -137,7 +137,7 @@ func Test_Store_loadContext_stops_at_recovery_deadline_while_state_lock_is_held(
 
 func Test_Manager_list_skips_job_removed_after_directory_enumeration(t *testing.T) {
 	// Given
-	workspace := t.TempDir()
+	workspace := testWorkspace(t)
 	executable, err := os.Executable()
 	require.NoError(t, err)
 	manager, err := New(Config{Executable: executable, StartupTimeout: time.Second, PollInterval: time.Millisecond})
@@ -174,7 +174,7 @@ func Test_Manager_list_skips_job_removed_after_directory_enumeration(t *testing.
 
 func newStateLockFixture(t *testing.T) (*Manager, state.TrustedInvocation, generated.JobID, func(*testing.T) func()) {
 	t.Helper()
-	workspace := t.TempDir()
+	workspace := testWorkspace(t)
 	contracts, err := contract.Load()
 	require.NoError(t, err)
 	invocation, decision := contracts.Policy().BindTrustedInvocation(

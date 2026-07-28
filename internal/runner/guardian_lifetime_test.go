@@ -24,7 +24,7 @@ func Test_Guardian_remains_alive_after_shell_exit_until_group_signal(t *testing.
 	require.NoError(t, err)
 	lifetimeReader, lifetimeWriter, err := os.Pipe()
 	require.NoError(t, err)
-	cwd, err := openWorkspaceDirectory(t.TempDir())
+	cwd, err := openWorkspaceDirectory(testWorkspace(t))
 	require.NoError(t, err)
 	devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
 	require.NoError(t, err)

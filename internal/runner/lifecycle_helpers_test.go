@@ -48,7 +48,7 @@ func runLifecycle(
 	outputLimit int,
 ) lifecycleResult {
 	t.Helper()
-	workspace := t.TempDir()
+	workspace := runner.NewTestWorkspace(t)
 	invocation := trustedInvocation(t, workspace, workspace)
 	executable, err := os.Executable()
 	require.NoError(t, err)

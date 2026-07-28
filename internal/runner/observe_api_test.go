@@ -13,7 +13,7 @@ import (
 
 func Test_Manager_observation_and_control_authorization(t *testing.T) {
 	// Given
-	workspace := t.TempDir()
+	workspace := runner.NewTestWorkspace(t)
 	manager := newControlManager(t)
 	owner := trustedInvocationFor(t, "owner", workspace)
 	observer := trustedInvocationFor(t, "observer", workspace)
@@ -47,8 +47,8 @@ func Test_Manager_observation_and_control_authorization(t *testing.T) {
 func Test_Manager_cross_workspace_read_is_masked_as_not_found(t *testing.T) {
 	// Given
 	manager := newControlManager(t)
-	ownerWorkspace := t.TempDir()
-	otherWorkspace := t.TempDir()
+	ownerWorkspace := runner.NewTestWorkspace(t)
+	otherWorkspace := runner.NewTestWorkspace(t)
 	owner := trustedInvocationFor(t, "owner", ownerWorkspace)
 	other := trustedInvocationFor(t, "other", otherWorkspace)
 	job := startControlJob(t, manager, owner, "printf ok")

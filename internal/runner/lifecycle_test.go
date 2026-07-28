@@ -139,7 +139,7 @@ func Test_Manager_cleans_descendant_after_output_limit_while_guardian_pins_group
 }
 
 func Test_Manager_cleans_descendant_after_cancel_while_guardian_pins_group(t *testing.T) {
-	workspace := t.TempDir()
+	workspace := runner.NewTestWorkspace(t)
 	pidPath := filepath.Join(workspace, "pid")
 	manager := newControlManager(t)
 	owner := trustedInvocationFor(t, "owner", workspace)

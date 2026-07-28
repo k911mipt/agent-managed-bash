@@ -16,9 +16,8 @@ import (
 
 func Test_OpenStore_rejects_symlinked_managed_directory(t *testing.T) {
 	// Given
-	workspace := filepath.Join(t.TempDir(), "workspace")
+	workspace := runner.NewTestWorkspace(t)
 	outside := filepath.Join(t.TempDir(), "outside")
-	require.NoError(t, os.Mkdir(workspace, 0o700))
 	require.NoError(t, os.Mkdir(outside, 0o700))
 	require.NoError(t, os.Symlink(outside, filepath.Join(workspace, ".managed_bash")))
 	contracts, err := contract.Load()

@@ -15,7 +15,7 @@ import (
 
 func Test_Manager_concurrent_observation_wait_and_cancel_are_race_safe(t *testing.T) {
 	// Given
-	workspace := t.TempDir()
+	workspace := runner.NewTestWorkspace(t)
 	manager := newControlManager(t)
 	owner := trustedInvocationFor(t, "owner", workspace)
 	observer := trustedInvocationFor(t, "observer", workspace)
