@@ -10,6 +10,7 @@ import "./release-candidate-transaction-hooks.interruption.test"
 
 const schemaPath = resolve(import.meta.dir, "../schemas/spdx-schema.json")
 const scriptPath = resolve(import.meta.dir, "release-candidate.ts")
+const interruptionTestTimeoutMilliseconds = 20_000
 const environment = {
   RELEASE_COMMIT: "0123456789abcdef0123456789abcdef01234567",
   RELEASE_REPOSITORY: "k911mipt/agent-managed-bash",
@@ -103,7 +104,7 @@ describe("release candidate interruption cleanup", () => {
       } finally {
         await rm(root, { force: true, recursive: true })
       }
-    })
+    }, interruptionTestTimeoutMilliseconds)
   }
 
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
@@ -141,7 +142,7 @@ describe("release candidate interruption cleanup", () => {
       } finally {
         await rm(root, { force: true, recursive: true })
       }
-    })
+    }, interruptionTestTimeoutMilliseconds)
   }
 
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
@@ -186,7 +187,7 @@ describe("release candidate interruption cleanup", () => {
       } finally {
         await rm(root, { force: true, recursive: true })
       }
-    })
+    }, interruptionTestTimeoutMilliseconds)
   }
 
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
@@ -226,6 +227,6 @@ describe("release candidate interruption cleanup", () => {
       } finally {
         await rm(root, { force: true, recursive: true })
       }
-    })
+    }, interruptionTestTimeoutMilliseconds)
   }
 })
