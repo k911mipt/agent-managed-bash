@@ -228,8 +228,12 @@ func (store *Store) commitWait(ctx context.Context, prepared *PreparedWait) (ret
 	if index >= 0 && current.CursorBytes >= prepared.cursor {
 		return nil
 	}
+	updatedAt := prepared.updatedAt
+	if finished := job.state.Job.FinishedAtUnixMs; finished != nil {
+		updatedAt = min(updatedAt, *finished)
+	}
 	nextObserver, decision := store.contracts.Policy().ObserverAfter(state.ObserverAdvanceContext{
-		Action: generated.ActionWait, Current: current, Output: prepared.output, UpdatedAtUnixMs: prepared.updatedAt,
+		Action: generated.ActionWait, Current: current, Output: prepared.output, UpdatedAtUnixMs: updatedAt,
 	})
 	if !decision.Allowed {
 		return decisionError(decision.Code)

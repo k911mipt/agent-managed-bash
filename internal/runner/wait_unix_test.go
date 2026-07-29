@@ -148,6 +148,34 @@ func Test_Manager_prepare_wait_preserves_absolute_timeout_when_final_read_observ
 	})
 }
 
+func Test_commitWait_clamps_observer_timestamp_to_terminal_finish(t *testing.T) {
+	// Given
+	store, initial, lease := newInternalTestJob(t)
+	t.Cleanup(func() { require.NoError(t, lease.release()) })
+	exitCode := 0
+	require.NoError(t, store.publishExecutionTerminal(initial.Job.JobID, executionOutcome{
+		cause: causeNormal, wait: shellWaitResult{exitCode: &exitCode},
+	}, lease))
+	terminal, err := store.Load(initial.Job.JobID)
+	require.NoError(t, err)
+	require.NotNil(t, terminal.State.Job.FinishedAtUnixMs)
+	finished := *terminal.State.Job.FinishedAtUnixMs
+	prepared := &PreparedWait{
+		jobID: initial.Job.JobID, updatedAt: finished + 1,
+		output: generated.OutputChunk{CapturedBytes: 0, Eof: true, NextCursorBytes: 0, StartCursorBytes: 0},
+	}
+
+	// When
+	err = store.commitWait(context.Background(), prepared)
+	committed, loadErr := store.Load(initial.Job.JobID)
+
+	// Then
+	require.NoError(t, err)
+	require.NoError(t, loadErr)
+	require.Len(t, committed.State.Observers, 1)
+	require.Equal(t, finished, committed.State.Observers[0].UpdatedAtUnixMs)
+}
+
 func newWaitTestFixture(t *testing.T) waitTestFixture {
 	t.Helper()
 	manager, invocation, jobID, _ := newStateLockFixture(t)
