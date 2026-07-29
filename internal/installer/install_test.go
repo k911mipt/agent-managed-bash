@@ -33,6 +33,50 @@ func Test_Install_publishes_fresh_release_and_binary_registration(t *testing.T) 
 	require.Equal(t, os.FileMode(0o555), info.Mode().Perm())
 }
 
+func Test_Install_stages_writable_root_with_readonly_descendants(t *testing.T) {
+	// Given
+	layout := newTestLayout(t)
+	bundle := writeTestBundle(t, "0.1.0", "first")
+
+	// When
+	err := installWithHooks(context.Background(), layout.config(bundle, "0.1.0"), hooks{
+		beforeReleaseRename: func(stage string, _ string) {
+			for path, expected := range map[string]os.FileMode{
+				stage:                                   0o700,
+				filepath.Join(stage, "bin"):             0o555,
+				filepath.Join(stage, "lib"):             0o555,
+				filepath.Join(stage, "lib", "opencode"): 0o555,
+			} {
+				info, statErr := os.Stat(path)
+				require.NoError(t, statErr)
+				require.Equal(t, expected, info.Mode().Perm())
+			}
+		},
+	})
+
+	// Then
+	require.NoError(t, err)
+}
+
+func Test_Install_postrelease_failure_removes_inactive_release(t *testing.T) {
+	// Given
+	layout := newTestLayout(t)
+	bundle := writeTestBundle(t, "0.1.0", "first")
+	injected := errors.New("injected post-release failure")
+
+	// When
+	err := installWithHooks(context.Background(), layout.config(bundle, "0.1.0"), hooks{
+		afterReleaseRename: func(string) error { return injected },
+	})
+
+	// Then
+	require.ErrorIs(t, err, injected)
+	require.NoDirExists(t, filepath.Join(layout.dataRoot, "releases", "0.1.0-"+hostTarget()))
+	require.NoFileExists(t, filepath.Join(layout.dataRoot, "current"))
+	require.NoFileExists(t, layout.binLink)
+	require.NoFileExists(t, layout.legacyPluginLink)
+}
+
 func Test_Install_identical_reinstall_is_pointer_noop(t *testing.T) {
 	// Given
 	layout := newTestLayout(t)
@@ -243,7 +287,7 @@ func Test_Install_refuses_release_destination_created_during_publication(t *test
 
 	// When
 	err := installWithHooks(context.Background(), layout.config(bundle, "0.1.0"), hooks{
-		beforeReleaseRename: func(final string) {
+		beforeReleaseRename: func(_ string, final string) {
 			require.NoError(t, os.Mkdir(final, 0o700))
 		},
 	})

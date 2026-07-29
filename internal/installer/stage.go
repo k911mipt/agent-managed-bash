@@ -24,7 +24,12 @@ type installedEntry struct {
 	mode      os.FileMode
 }
 
-func prepareRelease(paths installPaths, bundle release.Bundle, beforeRename func(string)) (string, bool, error) {
+func prepareRelease(
+	paths installPaths,
+	bundle release.Bundle,
+	beforeRename func(string, string),
+	afterRename func(string) error,
+) (string, bool, error) {
 	if err := ensureDirectory(paths.releases, 0o700); err != nil {
 		return "", false, err
 	}
@@ -48,17 +53,36 @@ func prepareRelease(paths installPaths, bundle release.Bundle, beforeRename func
 		return "", false, errors.Join(err, removeRelease(stage))
 	}
 	if beforeRename != nil {
-		beforeRename(final)
+		beforeRename(stage, final)
 	}
 	if err := renameNoReplace(stage, final); errors.Is(err, os.ErrExist) {
 		return "", false, errors.Join(fmt.Errorf("release destination appeared during publication: %w", ErrForeignPath), removeRelease(stage))
 	} else if err != nil {
 		return "", false, errors.Join(fmt.Errorf("publish release: %w", err), removeRelease(stage))
 	}
+	if afterRename != nil {
+		if err := afterRename(final); err != nil {
+			return "", false, cleanupPublishedRelease(paths, final, err)
+		}
+	}
+	if err := os.Chmod(final, 0o555); err != nil {
+		return "", false, cleanupPublishedRelease(paths, final, fmt.Errorf("make published release immutable: %w", err))
+	}
+	if err := syncDirectory(final); err != nil {
+		return "", false, cleanupPublishedRelease(paths, final, err)
+	}
 	if err := syncDirectory(paths.releases); err != nil {
-		return "", false, errors.Join(err, removeRelease(final))
+		return "", false, cleanupPublishedRelease(paths, final, err)
 	}
 	return final, true, nil
+}
+
+func cleanupPublishedRelease(paths installPaths, final string, cause error) error {
+	removeErr := removeRelease(final)
+	if removeErr != nil {
+		return errors.Join(cause, removeErr)
+	}
+	return errors.Join(cause, syncDirectory(paths.releases))
 }
 
 func populateRelease(stage string, bundle release.Bundle) error {
@@ -82,7 +106,7 @@ func populateRelease(stage string, bundle release.Bundle) error {
 	if err := writeStagedFile(filepath.Join(stage, "manifest.json"), bundle.Manifest, 0o444); err != nil {
 		return err
 	}
-	for _, directory := range []string{filepath.Join(stage, "lib", "opencode"), filepath.Join(stage, "bin"), filepath.Join(stage, "lib"), stage} {
+	for _, directory := range []string{filepath.Join(stage, "lib", "opencode"), filepath.Join(stage, "bin"), filepath.Join(stage, "lib")} {
 		if err := syncDirectory(directory); err != nil {
 			return err
 		}
@@ -93,7 +117,7 @@ func populateRelease(stage string, bundle release.Bundle) error {
 			return err
 		}
 	}
-	return nil
+	return syncDirectory(stage)
 }
 
 func copyStagedFile(source string, destination string, artifact release.BundleArtifact) error {
