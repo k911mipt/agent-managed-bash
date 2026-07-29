@@ -19,6 +19,15 @@ func (store *Store) reconcileRunnerState(
 	jobID generated.JobID,
 	deadline time.Time,
 ) (bool, error) {
+	return store.reconcileRunnerStateWithActiveMutation(ctx, jobID, deadline, nil)
+}
+
+func (store *Store) reconcileRunnerStateWithActiveMutation(
+	ctx context.Context,
+	jobID generated.JobID,
+	deadline time.Time,
+	mutateActive func() error,
+) (bool, error) {
 	if !validJobID(jobID) {
 		return false, ErrInvalidJobID
 	}
@@ -63,7 +72,14 @@ func (store *Store) reconcileRunnerState(
 	}
 	if err := lockFile(runnerLock, true); err != nil {
 		if errors.Is(err, ErrRunnerActive) {
-			return true, errors.Join(runnerLock.Close(), closeRecovery())
+			var mutationErr error
+			if mutateActive != nil && !intentExists {
+				if store.beforeActiveMutation != nil {
+					store.beforeActiveMutation()
+				}
+				mutationErr = mutateActive()
+			}
+			return true, errors.Join(mutationErr, runnerLock.Close(), closeRecovery())
 		}
 		return false, errors.Join(err, runnerLock.Close(), closeRecovery())
 	}

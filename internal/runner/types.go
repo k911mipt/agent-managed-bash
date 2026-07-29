@@ -28,21 +28,23 @@ type outputAppend struct {
 }
 
 type Store struct {
-	jobs                *os.File
-	workspace           string
-	cwd                 string
-	sessionID           generated.SessionID
-	contracts           contract.Contracts
-	syncJobs            func() error
-	syncDirectory       func(*os.File) error
-	closeJob            func(*os.File) error
-	lockTimeout         time.Duration
-	lockPoll            time.Duration
-	afterTerminalIntent func()
-	afterRecoveryLock   func()
-	afterMutationLock   func()
-	beforeOutputRead    func()
-	afterListEntries    func()
+	jobs                       *os.File
+	workspace                  string
+	cwd                        string
+	sessionID                  generated.SessionID
+	contracts                  contract.Contracts
+	syncJobs                   func() error
+	syncDirectory              func(*os.File) error
+	closeJob                   func(*os.File) error
+	lockTimeout                time.Duration
+	lockPoll                   time.Duration
+	afterTerminalIntent        func()
+	beforeTerminalRecoveryLock func()
+	afterRecoveryLock          func()
+	beforeActiveMutation       func()
+	afterMutationLock          func()
+	beforeOutputRead           func()
+	afterListEntries           func()
 }
 
 type pendingJob struct {

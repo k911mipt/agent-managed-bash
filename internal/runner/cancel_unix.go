@@ -5,6 +5,7 @@ package runner
 import (
 	"context"
 	"errors"
+	"os"
 	"time"
 
 	"github.com/k911mipt/agent-managed-bash/internal/protocol/generated"
@@ -28,16 +29,63 @@ func (store *Store) cancel(ctx context.Context, jobID generated.JobID) (result g
 		return generated.CancellationResult{}, decisionError(authorization.Code)
 	}
 	if running {
-		if _, err := store.reconcileRunnerState(ctx, jobID, time.Now().Add(store.lockTimeout)); err != nil {
+		var activeResult generated.CancellationResult
+		mutatedActive := false
+		deadline := time.Now().Add(store.lockTimeout)
+		runnerActive, err := store.reconcileRunnerStateWithActiveMutation(
+			ctx,
+			jobID,
+			deadline,
+			func() error {
+				var mutationErr error
+				activeResult, mutationErr = store.cancelActive(ctx, jobID, deadline)
+				mutatedActive = true
+				return mutationErr
+			},
+		)
+		if err != nil {
 			return generated.CancellationResult{}, err
 		}
+		if runnerActive && mutatedActive {
+			return activeResult, nil
+		}
 	}
+	return store.cancelCurrent(ctx, jobID)
+}
+
+func (store *Store) cancelActive(
+	ctx context.Context,
+	jobID generated.JobID,
+	deadline time.Time,
+) (result generated.CancellationResult, err error) {
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		return generated.CancellationResult{}, ErrStateLockTimeout
+	}
+	job, err := store.openLockedJobWith(jobID, func(file *os.File) error {
+		return lockStateFile(ctx, file, remaining, store.lockPoll)
+	})
+	if err != nil {
+		return generated.CancellationResult{}, err
+	}
+	defer func() { err = errors.Join(err, job.close()) }()
+	return store.cancelLocked(job, jobID)
+}
+
+func (store *Store) cancelCurrent(
+	ctx context.Context,
+	jobID generated.JobID,
+) (result generated.CancellationResult, err error) {
 	job, err := store.openLockedJobContext(ctx, jobID)
 	if err != nil {
 		return generated.CancellationResult{}, err
 	}
 	defer func() { err = errors.Join(err, job.close()) }()
-	authorization = store.contracts.Policy().AuthorizeMutation(state.AccessContext{
+	return store.cancelLocked(job, jobID)
+}
+
+func (store *Store) cancelLocked(job *lockedJob, jobID generated.JobID) (generated.CancellationResult, error) {
+	authorization := store.contracts.Policy().AuthorizeMutation(state.AccessContext{
 		JobWorkspace: job.state.Job.WorkspacePath, RequestWorkspace: store.workspace,
 		OwnerSession: job.state.Job.OwnerSessionID, ActorSession: store.sessionID,
 	})
