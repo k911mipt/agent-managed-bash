@@ -77,6 +77,53 @@ func Test_Install_postrelease_failure_removes_inactive_release(t *testing.T) {
 	require.NoFileExists(t, layout.legacyPluginLink)
 }
 
+func Test_Install_recovers_interrupted_release_publication(t *testing.T) {
+	// Given
+	layout := newTestLayout(t)
+	bundle := writeTestBundle(t, "0.1.0", "first")
+	releaseRoot := leaveInterruptedReleasePublication(t, layout, bundle)
+
+	// When
+	err := Install(context.Background(), layout.config(bundle, "0.1.0"))
+
+	// Then
+	require.NoError(t, err)
+	info, statErr := os.Stat(releaseRoot)
+	require.NoError(t, statErr)
+	require.Equal(t, os.FileMode(0o555), info.Mode().Perm())
+	require.Equal(t, "releases/0.1.0-"+hostTarget(), currentTarget(t, layout.dataRoot))
+	requireOwnedBinaryLink(t, layout)
+}
+
+func Test_Uninstall_removes_interrupted_release_publication(t *testing.T) {
+	// Given
+	layout := newTestLayout(t)
+	bundle := writeTestBundle(t, "0.1.0", "first")
+	leaveInterruptedReleasePublication(t, layout, bundle)
+
+	// When
+	err := Uninstall(context.Background(), layout.config("", "0.1.0"))
+
+	// Then
+	require.NoError(t, err)
+	require.NoDirExists(t, layout.dataRoot)
+}
+
+func leaveInterruptedReleasePublication(t *testing.T, layout testLayout, bundle string) string {
+	t.Helper()
+	const interruption = "simulated interruption after release publication"
+	require.PanicsWithValue(t, interruption, func() {
+		_ = installWithHooks(context.Background(), layout.config(bundle, "0.1.0"), hooks{
+			afterReleaseRename: func(string) error { panic(interruption) },
+		})
+	})
+	releaseRoot := filepath.Join(layout.dataRoot, "releases", "0.1.0-"+hostTarget())
+	info, err := os.Stat(releaseRoot)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o700), info.Mode().Perm())
+	return releaseRoot
+}
+
 func Test_Install_identical_reinstall_is_pointer_noop(t *testing.T) {
 	// Given
 	layout := newTestLayout(t)

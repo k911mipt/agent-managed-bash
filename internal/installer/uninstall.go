@@ -130,12 +130,19 @@ func validateOwnedInstallation(paths installPaths) ([]string, error) {
 			return nil, fmt.Errorf("unknown release %q: %w", entry.Name(), ErrForeignPath)
 		}
 		root := filepath.Join(paths.releases, entry.Name())
-		if err := validateInstalledTree(root, nil); err != nil {
+		if err := validateRemovableRelease(root); err != nil {
 			return nil, err
 		}
 		releases = append(releases, root)
 	}
 	return releases, nil
+}
+
+func validateRemovableRelease(root string) error {
+	if err := validateInstalledTree(root, nil); err == nil {
+		return nil
+	}
+	return validateInstalledTreeMode(root, 0o700, nil)
 }
 
 func pathExists(path string) (bool, error) {
