@@ -41,6 +41,7 @@ func superviseShell(
 	var cause executionCause
 	var waitResult shellWaitResult
 	var operationErr error
+	var processGroupSignalErrors []error
 	waited := false
 	captureDone := false
 	cleanupStarted := false
@@ -54,7 +55,7 @@ func superviseShell(
 			return
 		}
 		cleanupStarted = true
-		operationErr = errors.Join(operationErr, shell.signalGroup(unix.SIGTERM))
+		processGroupSignalErrors = append(processGroupSignalErrors, shell.signalGroup(unix.SIGTERM))
 		cleanupGrace := grace
 		if cause == causeNormal {
 			cleanupGrace = 0
@@ -105,7 +106,7 @@ func superviseShell(
 			}
 		case <-graceExpired:
 			graceExpired = nil
-			operationErr = errors.Join(operationErr, shell.signalGroup(unix.SIGKILL))
+			processGroupSignalErrors = append(processGroupSignalErrors, shell.signalGroup(unix.SIGKILL))
 			if waitResult.signal == nil && cause != causeNormal {
 				signal := int(unix.SIGKILL)
 				waitResult.signal = &signal
@@ -135,6 +136,7 @@ func superviseShell(
 	if graceTimer != nil {
 		graceTimer.Stop()
 	}
+	operationErr = errors.Join(operationErr, reconcileProcessGroupSignalErrors(shell.processGroup, processGroupSignalErrors...))
 	if operationErr != nil {
 		return executionOutcome{}, fmt.Errorf("supervise shell: %w", operationErr)
 	}

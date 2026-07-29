@@ -3,6 +3,7 @@
 package runner
 
 import (
+	"fmt"
 	"os/exec"
 	"testing"
 	"time"
@@ -37,4 +38,14 @@ func Test_benignProcessGroupSignalError_treats_disappeared_group_as_gone(t *test
 	require.ErrorIs(t, unix.Kill(-processGroupID, 0), unix.ESRCH)
 
 	require.True(t, benignProcessGroupSignalError(processGroupID, unix.EPERM))
+}
+
+func Test_reconcileProcessGroupSignalErrors_rechecks_permission_after_group_disappears(t *testing.T) {
+	const processGroupID = 999999
+	require.ErrorIs(t, unix.Kill(-processGroupID, 0), unix.ESRCH)
+
+	err := reconcileProcessGroupSignalErrors(processGroupID, fmt.Errorf("signal process group: %w", unix.EPERM))
+
+	require.NoError(t, err)
+	require.ErrorIs(t, reconcileProcessGroupSignalErrors(processGroupID, ErrExecution), ErrExecution)
 }

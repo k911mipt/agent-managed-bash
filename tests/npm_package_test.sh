@@ -18,7 +18,7 @@ if (manifest.name !== "@k911mipt/opencode-agent-managed-bash" || manifest.privat
 make --no-print-directory -C "$root" npm-package
 
 test -f "$archive"
-tar -tzf "$archive" | sort >"$stage/files"
+tar -tzf "$archive" | LC_ALL=C sort >"$stage/files"
 printf '%s\n' \
   'package/LICENSE' \
   'package/README.md' \

@@ -40,6 +40,16 @@ func signalProcessGroup(processGroupID int, signal unix.Signal) error {
 	return nil
 }
 
+func reconcileProcessGroupSignalErrors(processGroupID int, signalErrors ...error) error {
+	var result error
+	for _, err := range signalErrors {
+		if err != nil && !benignProcessGroupSignalError(processGroupID, err) {
+			result = errors.Join(result, err)
+		}
+	}
+	return result
+}
+
 func VerifyProcessIdentity(pid int, expected string) (bool, error) {
 	actual, err := processBirthIdentity(pid)
 	if err != nil {
