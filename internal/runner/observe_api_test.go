@@ -30,7 +30,16 @@ func Test_Manager_observation_and_control_authorization(t *testing.T) {
 	})
 	listed, listErr := manager.List(context.Background(), runner.ListRequest{Invocation: observer})
 	_, nonOwnerRemoveErr := manager.Remove(context.Background(), runner.RemoveRequest{Invocation: observer, JobID: job.JobID})
-	removed, removeErr := manager.Remove(context.Background(), runner.RemoveRequest{Invocation: owner, JobID: job.JobID})
+	var removed generated.RemoveResult
+	var removeErr error
+	controlWaitForCondition(t, testLifecycleDeadline, func() bool {
+		removed, removeErr = manager.Remove(context.Background(), runner.RemoveRequest{Invocation: owner, JobID: job.JobID})
+		if removeErr == nil {
+			return true
+		}
+		require.ErrorIs(t, removeErr, runner.ErrRunnerActive)
+		return false
+	})
 
 	// Then
 	require.NoError(t, statusErr)
