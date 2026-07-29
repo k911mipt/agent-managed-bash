@@ -30,6 +30,13 @@ func (store *Store) removeTerminal(ctx context.Context, jobID generated.JobID) e
 		return decisionError(authorization.Code)
 	}
 	if running {
+		active, err := store.runnerLeaseActive(jobID)
+		if err != nil {
+			return err
+		}
+		if active {
+			return ErrActiveJob
+		}
 		runnerActive, err := store.reconcileRunnerState(ctx, jobID, time.Now().Add(store.lockTimeout))
 		if err != nil {
 			return err
@@ -84,4 +91,22 @@ func (store *Store) removeTerminal(ctx context.Context, jobID generated.JobID) e
 		return cleanupErr
 	}
 	return errors.Join(cleanupErr, removeDirectory(store.jobs, string(jobID)))
+}
+
+func (store *Store) runnerLeaseActive(jobID generated.JobID) (bool, error) {
+	directory, err := openDirectoryAt(store.jobs, string(jobID), true)
+	if err != nil {
+		return false, err
+	}
+	runnerLock, err := openPrivateFileAt(directory, "runner.lock", unix.O_RDWR)
+	if err != nil {
+		return false, errors.Join(err, directory.Close())
+	}
+	if err := lockFile(runnerLock, true); err != nil {
+		if errors.Is(err, ErrRunnerActive) {
+			return true, errors.Join(runnerLock.Close(), directory.Close())
+		}
+		return false, errors.Join(err, runnerLock.Close(), directory.Close())
+	}
+	return false, errors.Join(unlockFile(runnerLock), runnerLock.Close(), directory.Close())
 }
