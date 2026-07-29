@@ -146,22 +146,20 @@ describe("release publication fake CLI surface", () => {
     } finally { await rm(root, { force: true, recursive: true }) }
   })
 
-  test("rejects real-shaped provenance subject-set and nested identity conflicts", async () => {
-    // Given
-    const cases = [
-      { githubClaims: { path: ".github/workflows/wrong.yml" }, name: "workflow" },
-      { githubClaims: { ref: "refs/heads/master" }, name: "ref" },
-      { githubClaims: { sha: "f".repeat(40) }, name: "sha" },
-      { githubClaims: { environment: "self-hosted" }, name: "environment" },
-      { githubClaims: { builder: "https://github.com/actions/runner/github-hosted" }, name: "hosted runner builder" },
-      { githubClaims: { builder: "https://github.com/npm/cli/.github/workflows/release.yml@refs/tags/v0.1.0" }, name: "npm builder" },
-      { githubClaims: { builder: "https://github.com/k911mipt/agent-managed-bash/.github/workflows/wrong.yml@refs/tags/v0.1.0" }, name: "wrong workflow builder" },
-      { githubSubjectShape: "missing", name: "missing subject" },
-      { githubSubjectShape: "extra", name: "extra subject" },
-      { githubSubjectShape: "duplicate", name: "duplicate subject" },
-    ]
-
-    for (const testCase of cases) {
+  for (const testCase of [
+    { githubClaims: { path: ".github/workflows/wrong.yml" }, name: "workflow" },
+    { githubClaims: { ref: "refs/heads/master" }, name: "ref" },
+    { githubClaims: { sha: "f".repeat(40) }, name: "sha" },
+    { githubClaims: { environment: "self-hosted" }, name: "environment" },
+    { githubClaims: { builder: "https://github.com/actions/runner/github-hosted" }, name: "hosted runner builder" },
+    { githubClaims: { builder: "https://github.com/npm/cli/.github/workflows/release.yml@refs/tags/v0.1.0" }, name: "npm builder" },
+    { githubClaims: { builder: "https://github.com/k911mipt/agent-managed-bash/.github/workflows/wrong.yml@refs/tags/v0.1.0" }, name: "wrong workflow builder" },
+    { githubSubjectShape: "missing", name: "missing subject" },
+    { githubSubjectShape: "extra", name: "extra subject" },
+    { githubSubjectShape: "duplicate", name: "duplicate subject" },
+  ]) {
+    test(`rejects real-shaped provenance conflict: ${testCase.name}`, async () => {
+      // Given
       const root = await mkdtemp(join(tmpdir(), `agent-managed-bash-release-${testCase.name}-`))
       const environment = await setupPublication(root)
       const arguments_ = ["stage", "--candidate", join(root, "candidate"), "--control", join(root, "control", "CANDIDATE-RECEIPT.json")]
@@ -180,22 +178,20 @@ describe("release publication fake CLI surface", () => {
         expect(result.exitCode).not.toBe(0)
         expect(JSON.parse(await readFile(fakeStatePath(environment), "utf8"))["release"]["isDraft"]).toBeTrue()
       } finally { await rm(root, { force: true, recursive: true }) }
-    }
-  }, { timeout: 20_000 })
+    }, { timeout: 20_000 })
+  }
 
-  test("rejects npm audit failures and a manifest-linked bundle with a swapped subject digest", async () => {
-    // Given
-    const cases = [
-      { name: "nonempty invalid", npmInvalid: [{ name: "candidate" }] },
-      { name: "nonempty missing", npmMissing: [{ name: "candidate" }] },
-      { name: "audit nonzero", npmAuditExitCode: 1 },
-      { githubClaims: { sha: "f".repeat(40) }, name: "swapped provenance bundle" },
-      { name: "encoded scoped slash", npmPurl: `pkg:npm/%40k911mipt%2fopencode-agent-managed-bash@${fixtureVersion}` },
-      { name: "workflow builder", npmBuilder: `https://github.com/k911mipt/agent-managed-bash/.github/workflows/release.yml@refs/tags/v${fixtureVersion}` },
-      { name: "wrong hosted builder", npmBuilder: "https://github.com/actions/runner/self-hosted" },
-    ]
-
-    for (const testCase of cases) {
+  for (const testCase of [
+    { name: "nonempty invalid", npmInvalid: [{ name: "candidate" }] },
+    { name: "nonempty missing", npmMissing: [{ name: "candidate" }] },
+    { name: "audit nonzero", npmAuditExitCode: 1 },
+    { githubClaims: { sha: "f".repeat(40) }, name: "swapped provenance bundle" },
+    { name: "encoded scoped slash", npmPurl: `pkg:npm/%40k911mipt%2fopencode-agent-managed-bash@${fixtureVersion}` },
+    { name: "workflow builder", npmBuilder: `https://github.com/k911mipt/agent-managed-bash/.github/workflows/release.yml@refs/tags/v${fixtureVersion}` },
+    { name: "wrong hosted builder", npmBuilder: "https://github.com/actions/runner/self-hosted" },
+  ]) {
+    test(`rejects npm publication conflict: ${testCase.name}`, async () => {
+      // Given
       const root = await mkdtemp(join(tmpdir(), "agent-managed-bash-release-npm-"))
       const environment = await setupPublication(root)
       await writeFile(fakeStatePath(environment), JSON.stringify(testCase))
@@ -208,8 +204,8 @@ describe("release publication fake CLI surface", () => {
         expect(result.exitCode).not.toBe(0)
         expect(JSON.parse(await readFile(fakeStatePath(environment), "utf8"))["release"]).toBeUndefined()
       } finally { await rm(root, { force: true, recursive: true }) }
-    }
-  }, { timeout: 20_000 })
+    }, { timeout: 20_000 })
+  }
 
   test("removes every verifier bundle root after success and verifier failure", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-managed-bash-release-attestation-cleanup-"))
