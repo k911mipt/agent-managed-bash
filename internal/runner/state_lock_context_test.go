@@ -4,6 +4,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"os"
 	"sync/atomic"
 	"testing"
@@ -164,6 +165,23 @@ func Test_Manager_list_skips_job_removed_after_directory_enumeration(t *testing.
 	waitForCondition(t, time.Second, func() bool {
 		observation, statusErr := manager.Status(context.Background(), StatusRequest{Invocation: invocation, JobID: job.JobID})
 		return statusErr == nil && observation.Job.Status != generated.JobStatusRunning
+	})
+	store, err := OpenStore(invocation, contracts)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, store.Close()) })
+	waitForCondition(t, time.Second, func() bool {
+		directory, openErr := openDirectoryAt(store.jobs, string(job.JobID), true)
+		require.NoError(t, openErr)
+		runnerLock, openErr := openPrivateFileAt(directory, "runner.lock", unix.O_RDWR)
+		require.NoError(t, openErr)
+		lockErr := lockFile(runnerLock, true)
+		if errors.Is(lockErr, ErrRunnerActive) {
+			require.NoError(t, errors.Join(runnerLock.Close(), directory.Close()))
+			return false
+		}
+		require.NoError(t, lockErr)
+		require.NoError(t, errors.Join(unlockFile(runnerLock), runnerLock.Close(), directory.Close()))
+		return true
 	})
 	var removeErr error
 	manager.afterListEntries = func() {
