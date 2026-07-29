@@ -14,7 +14,7 @@ import (
 
 func Test_Application_run_returns_runner_unavailable_for_missing_executable(t *testing.T) {
 	// Given
-	workspace := t.TempDir()
+	workspace := testWorkspace(t)
 	useWorkingDirectory(t, workspace)
 	application, err := New(Config{
 		BinaryVersion: "dev",
@@ -42,7 +42,7 @@ func Test_Application_run_returns_runner_unavailable_for_missing_executable(t *t
 
 func Test_Application_run_returns_runner_unavailable_for_incompatible_executable(t *testing.T) {
 	// Given
-	workspace := t.TempDir()
+	workspace := testWorkspace(t)
 	useWorkingDirectory(t, workspace)
 	executable := filepath.Join(workspace, "incompatible-managed-bash")
 	require.NoError(t, os.WriteFile(executable, []byte("#!/bin/sh\nexit 0\n"), 0o700))

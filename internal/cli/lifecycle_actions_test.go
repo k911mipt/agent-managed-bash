@@ -29,7 +29,7 @@ func newLifecycleHarness(t *testing.T) lifecycleHarness {
 		},
 	})
 	require.NoError(t, err)
-	workspace := t.TempDir()
+	workspace := testWorkspace(t)
 	useWorkingDirectory(t, workspace)
 	context := generated.TrustedContext{SessionID: "session-1", WorkspacePath: workspace, Cwd: workspace}
 	return lifecycleHarness{
