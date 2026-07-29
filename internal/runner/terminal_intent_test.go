@@ -18,9 +18,10 @@ import (
 
 func Test_stateWriters_wait_for_terminal_intent_and_preserve_terminal_result(t *testing.T) {
 	tests := []struct {
-		name      string
-		prepare   func(*testing.T, *Store, generated.PersistedJobState) func(context.Context) error
-		wantError error
+		name        string
+		prepare     func(*testing.T, *Store, generated.PersistedJobState) func(context.Context) error
+		lockTimeout time.Duration
+		wantError   error
 	}{
 		{
 			name: "cancel",
@@ -30,7 +31,8 @@ func Test_stateWriters_wait_for_terminal_intent_and_preserve_terminal_result(t *
 					return err
 				}
 			},
-			wantError: context.DeadlineExceeded,
+			lockTimeout: 5 * time.Second,
+			wantError:   context.DeadlineExceeded,
 		},
 		{
 			name: "append output",
@@ -40,12 +42,14 @@ func Test_stateWriters_wait_for_terminal_intent_and_preserve_terminal_result(t *
 					return err
 				}
 			},
-			wantError: ErrStateLockTimeout,
+			lockTimeout: 20 * time.Millisecond,
+			wantError:   ErrStateLockTimeout,
 		},
 		{
-			name:      "prepared wait commit",
-			prepare:   prepareWaitIntentWriter,
-			wantError: context.DeadlineExceeded,
+			name:        "prepared wait commit",
+			prepare:     prepareWaitIntentWriter,
+			lockTimeout: 5 * time.Second,
+			wantError:   context.DeadlineExceeded,
 		},
 		{
 			name: "generic state publish",
@@ -58,14 +62,15 @@ func Test_stateWriters_wait_for_terminal_intent_and_preserve_terminal_result(t *
 					return store.publishState(initial.Job.JobID, next)
 				}
 			},
-			wantError: ErrStateLockTimeout,
+			lockTimeout: 20 * time.Millisecond,
+			wantError:   ErrStateLockTimeout,
 		},
 	}
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			store, initial, lease := newInternalTestJob(t)
 			t.Cleanup(func() { require.NoError(t, lease.release()) })
-			store.lockTimeout = 20 * time.Millisecond
+			store.lockTimeout = testCase.lockTimeout
 			store.lockPoll = time.Millisecond
 			appendResult, err := store.appendOutput(initial.Job.JobID, make([]byte, initial.Job.OutputLimitBytes))
 			require.NoError(t, err)
