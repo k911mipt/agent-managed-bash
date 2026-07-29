@@ -33,7 +33,8 @@ func signalProcessGroup(processGroupID int, signal unix.Signal) error {
 	if processGroupID <= 0 {
 		return ErrExecution
 	}
-	if err := unix.Kill(-processGroupID, signal); err != nil && !errors.Is(err, unix.ESRCH) {
+	if err := unix.Kill(-processGroupID, signal); err != nil && !errors.Is(err, unix.ESRCH) &&
+		!benignProcessGroupSignalError(processGroupID, err) {
 		return fmt.Errorf("signal process group %d: %w", processGroupID, err)
 	}
 	return nil
