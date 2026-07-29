@@ -10,7 +10,7 @@ import (
 )
 
 func Test_duplicateDirectory_sets_close_on_exec_atomically(t *testing.T) {
-	directory, err := openWorkspaceDirectory(t.TempDir())
+	directory, err := openWorkspaceDirectory(testWorkspace(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, directory.Close()) })
 

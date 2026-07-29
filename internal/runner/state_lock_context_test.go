@@ -4,6 +4,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"os"
 	"sync/atomic"
 	"testing"
@@ -17,45 +18,52 @@ import (
 )
 
 func Test_Manager_control_operations_honor_context_while_state_lock_is_held(t *testing.T) {
-	operations := map[string]func(context.Context, *Manager, state.TrustedInvocation, generated.JobID) error{
-		"status": func(ctx context.Context, manager *Manager, invocation state.TrustedInvocation, jobID generated.JobID) error {
+	operations := map[string]struct {
+		run     func(context.Context, *Manager, state.TrustedInvocation, generated.JobID) error
+		wantErr error
+	}{
+		"status": {run: func(ctx context.Context, manager *Manager, invocation state.TrustedInvocation, jobID generated.JobID) error {
 			_, err := manager.Status(ctx, StatusRequest{Invocation: invocation, JobID: jobID})
 			return err
-		},
-		"output": func(ctx context.Context, manager *Manager, invocation state.TrustedInvocation, jobID generated.JobID) error {
+		}},
+		"output": {run: func(ctx context.Context, manager *Manager, invocation state.TrustedInvocation, jobID generated.JobID) error {
 			_, err := manager.Output(ctx, OutputRequest{Invocation: invocation, JobID: jobID})
 			return err
-		},
-		"cancel": func(ctx context.Context, manager *Manager, invocation state.TrustedInvocation, jobID generated.JobID) error {
+		}},
+		"cancel": {run: func(ctx context.Context, manager *Manager, invocation state.TrustedInvocation, jobID generated.JobID) error {
 			_, err := manager.Cancel(ctx, CancelRequest{Invocation: invocation, JobID: jobID})
 			return err
-		},
-		"list": func(ctx context.Context, manager *Manager, invocation state.TrustedInvocation, _ generated.JobID) error {
+		}, wantErr: context.DeadlineExceeded},
+		"list": {run: func(ctx context.Context, manager *Manager, invocation state.TrustedInvocation, _ generated.JobID) error {
 			_, err := manager.List(ctx, ListRequest{Invocation: invocation})
 			return err
-		},
-		"remove": func(ctx context.Context, manager *Manager, invocation state.TrustedInvocation, jobID generated.JobID) error {
+		}},
+		"remove": {run: func(ctx context.Context, manager *Manager, invocation state.TrustedInvocation, jobID generated.JobID) error {
 			_, err := manager.Remove(ctx, RemoveRequest{Invocation: invocation, JobID: jobID})
 			return err
-		},
-		"prepare wait": func(ctx context.Context, manager *Manager, invocation state.TrustedInvocation, jobID generated.JobID) error {
+		}, wantErr: ErrActiveJob},
+		"prepare wait": {run: func(ctx context.Context, manager *Manager, invocation state.TrustedInvocation, jobID generated.JobID) error {
 			_, err := manager.PrepareWait(ctx, WaitRequest{
-				Invocation: invocation, JobID: jobID, Timeout: time.Second, IdleTimeout: time.Second,
+				Invocation: invocation, JobID: jobID, Timeout: time.Second, IdleTimeout: time.Millisecond,
 			})
 			return err
-		},
+		}},
 	}
 	for name, operation := range operations {
 		t.Run(name, func(t *testing.T) {
 			manager, invocation, jobID, holdLock := newStateLockFixture(t)
 			release := holdLock(t)
 			defer release()
-			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+			ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 			defer cancel()
 
-			err := operation(ctx, manager, invocation, jobID)
+			err := operation.run(ctx, manager, invocation, jobID)
 
-			require.ErrorIs(t, err, context.DeadlineExceeded)
+			if operation.wantErr == nil {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, operation.wantErr)
+			}
 		})
 	}
 }
@@ -69,7 +77,7 @@ func Test_PreparedWait_commit_honors_context_while_state_lock_is_held(t *testing
 	require.NoError(t, err)
 	release := holdLock(t)
 	defer release()
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	defer cancel()
 
 	// When
@@ -104,19 +112,19 @@ func Test_Manager_prepare_wait_returns_checkpoint_when_lock_consumes_absolute_ti
 	started := time.Now()
 
 	prepared, err := manager.PrepareWait(context.Background(), WaitRequest{
-		Invocation: invocation, JobID: jobID, Timeout: 25 * time.Millisecond, IdleTimeout: time.Second,
+		Invocation: invocation, JobID: jobID, Timeout: 250 * time.Millisecond, IdleTimeout: 2 * time.Second,
 	})
 	elapsed := time.Since(started)
 	release()
 
 	require.NoError(t, err)
 	require.NotNil(t, prepared)
-	require.Less(t, elapsed, 200*time.Millisecond)
+	require.Less(t, elapsed, time.Second)
 	require.Equal(t, jobID, prepared.Observation.Observation.Job.JobID)
 	require.NoError(t, prepared.Commit(context.Background()))
 }
 
-func Test_Store_loadContext_stops_at_recovery_deadline_while_state_lock_is_held(t *testing.T) {
+func Test_Store_loadContext_returns_snapshot_while_state_lock_is_held(t *testing.T) {
 	_, invocation, jobID, holdLock := newStateLockFixture(t)
 	contracts, err := contract.Load()
 	require.NoError(t, err)
@@ -125,19 +133,20 @@ func Test_Store_loadContext_stops_at_recovery_deadline_while_state_lock_is_held(
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
 	release := holdLock(t)
 	defer release()
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	defer cancel()
 	started := time.Now()
 
-	_, err = store.loadContext(ctx, jobID)
+	snapshot, err := store.loadContext(ctx, jobID)
 
-	require.ErrorIs(t, err, context.DeadlineExceeded)
-	require.Less(t, time.Since(started), 200*time.Millisecond)
+	require.NoError(t, err)
+	require.Equal(t, jobID, snapshot.State.Job.JobID)
+	require.Less(t, time.Since(started), time.Second)
 }
 
 func Test_Manager_list_skips_job_removed_after_directory_enumeration(t *testing.T) {
 	// Given
-	workspace := t.TempDir()
+	workspace := testWorkspace(t)
 	executable, err := os.Executable()
 	require.NoError(t, err)
 	manager, err := New(Config{Executable: executable, StartupTimeout: time.Second, PollInterval: time.Millisecond})
@@ -157,6 +166,23 @@ func Test_Manager_list_skips_job_removed_after_directory_enumeration(t *testing.
 		observation, statusErr := manager.Status(context.Background(), StatusRequest{Invocation: invocation, JobID: job.JobID})
 		return statusErr == nil && observation.Job.Status != generated.JobStatusRunning
 	})
+	store, err := OpenStore(invocation, contracts)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, store.Close()) })
+	waitForCondition(t, time.Second, func() bool {
+		directory, openErr := openDirectoryAt(store.jobs, string(job.JobID), true)
+		require.NoError(t, openErr)
+		runnerLock, openErr := openPrivateFileAt(directory, "runner.lock", unix.O_RDWR)
+		require.NoError(t, openErr)
+		lockErr := lockFile(runnerLock, true)
+		if errors.Is(lockErr, ErrRunnerActive) {
+			require.NoError(t, errors.Join(runnerLock.Close(), directory.Close()))
+			return false
+		}
+		require.NoError(t, lockErr)
+		require.NoError(t, errors.Join(unlockFile(runnerLock), runnerLock.Close(), directory.Close()))
+		return true
+	})
 	var removeErr error
 	manager.afterListEntries = func() {
 		manager.afterListEntries = nil
@@ -174,7 +200,7 @@ func Test_Manager_list_skips_job_removed_after_directory_enumeration(t *testing.
 
 func newStateLockFixture(t *testing.T) (*Manager, state.TrustedInvocation, generated.JobID, func(*testing.T) func()) {
 	t.Helper()
-	workspace := t.TempDir()
+	workspace := testWorkspace(t)
 	contracts, err := contract.Load()
 	require.NoError(t, err)
 	invocation, decision := contracts.Policy().BindTrustedInvocation(
@@ -182,7 +208,7 @@ func newStateLockFixture(t *testing.T) (*Manager, state.TrustedInvocation, gener
 		generated.TrustedContext{SessionID: "owner", WorkspacePath: workspace, Cwd: workspace},
 	)
 	require.True(t, decision.Allowed)
-	manager, err := New(Config{StateLockTimeout: time.Second, StateLockPoll: time.Millisecond})
+	manager, err := New(Config{StateLockTimeout: 2 * time.Second, StateLockPoll: time.Millisecond})
 	require.NoError(t, err)
 	store, err := OpenStore(invocation, contracts)
 	require.NoError(t, err)

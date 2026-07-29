@@ -1,4 +1,4 @@
-.PHONY: cli-acceptance cli-build cli-race-test cli-test doctor e2e-test generated-model-compile go-check installed-opencode-e2e opencode-plugin-config-test plugin-bundle plugin-bundle-test plugin-test plugin-typecheck portable-skill-test protocol-schema-test release-package release-package-test release-version-test runner-test schema-check schema-generate schema-generated-check state-schema-test verify workflow-test
+.PHONY: cli-acceptance cli-build cli-race-test cli-test doctor e2e-test generated-model-compile go-check installed-opencode-e2e npm-package npm-package-test opencode-plugin-config-test plugin-bundle plugin-bundle-test plugin-test plugin-typecheck portable-skill-test protocol-schema-test public-install-test release-candidate-test release-package release-package-test release-publish-test release-version-test runner-test schema-check schema-generate schema-generated-check state-schema-test verify workflow-test
 
 CLI_BINARY ?= bin/managed-bash
 CLI_PACKAGE ?= ./cmd/managed-bash
@@ -76,6 +76,22 @@ plugin-bundle:
 plugin-bundle-test:
 	@sh tests/plugin_bundle_test.sh
 
+npm-package: plugin-bundle
+	@bun run --silent scripts/package-opencode-plugin.ts
+
+npm-package-test:
+	@bun test scripts/package-opencode-plugin.test.ts
+	@sh tests/npm_package_test.sh
+
+release-candidate-test:
+	@bun test scripts/release-candidate.receipt.test.ts scripts/release-candidate.spdx.test.ts scripts/release-candidate.assembly.test.ts scripts/release-candidate.control.test.ts scripts/release-candidate.interruption.test.ts
+
+release-publish-test:
+	@bun test scripts/release-publish.test.ts scripts/release-publish-cli.test.ts scripts/release-publish-command.test.ts
+
+public-install-test: release-package
+	@sh tests/public_install_test.sh
+
 opencode-plugin-config-test: plugin-bundle
 	@sh tests/opencode_plugin_config_test.sh
 
@@ -109,8 +125,12 @@ verify:
 	@$(MAKE) --no-print-directory plugin-test
 	@$(MAKE) --no-print-directory plugin-typecheck
 	@$(MAKE) --no-print-directory plugin-bundle-test
+	@$(MAKE) --no-print-directory npm-package-test
+	@$(MAKE) --no-print-directory release-candidate-test
+	@$(MAKE) --no-print-directory release-publish-test
 	@$(MAKE) --no-print-directory opencode-plugin-config-test
 	@$(MAKE) --no-print-directory release-package-test
+	@$(MAKE) --no-print-directory public-install-test
 	@sh tests/installed_opencode_test.sh
 	@$(MAKE) --no-print-directory go-check
 

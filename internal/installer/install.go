@@ -60,7 +60,9 @@ func installWithHooks(ctx context.Context, config Config, callbacks hooks) (err 
 	if err != nil {
 		return err
 	}
-	final, releaseCreated, err := prepareRelease(paths, bundle, callbacks.beforeReleaseRename)
+	final, releaseCreated, err := prepareRelease(
+		paths, bundle, callbacks.beforeReleaseRename, callbacks.afterReleaseRename,
+	)
 	if err != nil {
 		return err
 	}

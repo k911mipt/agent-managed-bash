@@ -1,5 +1,5 @@
 {
-  "name": "@agent-managed-bash/opencode",
+  "name": "@k911mipt/opencode-agent-managed-bash",
   "private": true,
   "scripts": {
     "test": "bun test src",

@@ -24,7 +24,12 @@ type installedEntry struct {
 	mode      os.FileMode
 }
 
-func prepareRelease(paths installPaths, bundle release.Bundle, beforeRename func(string)) (string, bool, error) {
+func prepareRelease(
+	paths installPaths,
+	bundle release.Bundle,
+	beforeRename func(string, string),
+	afterRename func(string) error,
+) (string, bool, error) {
 	if err := ensureDirectory(paths.releases, 0o700); err != nil {
 		return "", false, err
 	}
@@ -34,7 +39,12 @@ func prepareRelease(paths installPaths, bundle release.Bundle, beforeRename func
 	final := filepath.Join(paths.releases, releaseName(identityFromBundle(bundle)))
 	if _, err := os.Lstat(final); err == nil {
 		if err := validateInstalledRelease(final, bundle); err != nil {
-			return "", false, err
+			if interruptedErr := validateInterruptedRelease(final, bundle); interruptedErr != nil {
+				return "", false, err
+			}
+			if err := hardenPublishedRelease(paths, final); err != nil {
+				return "", false, cleanupPublishedRelease(paths, final, fmt.Errorf("recover interrupted release publication: %w", err))
+			}
 		}
 		return final, false, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -48,17 +58,40 @@ func prepareRelease(paths installPaths, bundle release.Bundle, beforeRename func
 		return "", false, errors.Join(err, removeRelease(stage))
 	}
 	if beforeRename != nil {
-		beforeRename(final)
+		beforeRename(stage, final)
 	}
 	if err := renameNoReplace(stage, final); errors.Is(err, os.ErrExist) {
 		return "", false, errors.Join(fmt.Errorf("release destination appeared during publication: %w", ErrForeignPath), removeRelease(stage))
 	} else if err != nil {
 		return "", false, errors.Join(fmt.Errorf("publish release: %w", err), removeRelease(stage))
 	}
-	if err := syncDirectory(paths.releases); err != nil {
-		return "", false, errors.Join(err, removeRelease(final))
+	if afterRename != nil {
+		if err := afterRename(final); err != nil {
+			return "", false, cleanupPublishedRelease(paths, final, err)
+		}
+	}
+	if err := hardenPublishedRelease(paths, final); err != nil {
+		return "", false, cleanupPublishedRelease(paths, final, err)
 	}
 	return final, true, nil
+}
+
+func hardenPublishedRelease(paths installPaths, final string) error {
+	if err := os.Chmod(final, 0o555); err != nil {
+		return fmt.Errorf("make published release immutable: %w", err)
+	}
+	if err := syncDirectory(final); err != nil {
+		return err
+	}
+	return syncDirectory(paths.releases)
+}
+
+func cleanupPublishedRelease(paths installPaths, final string, cause error) error {
+	removeErr := removeRelease(final)
+	if removeErr != nil {
+		return errors.Join(cause, removeErr)
+	}
+	return errors.Join(cause, syncDirectory(paths.releases))
 }
 
 func populateRelease(stage string, bundle release.Bundle) error {
@@ -82,7 +115,7 @@ func populateRelease(stage string, bundle release.Bundle) error {
 	if err := writeStagedFile(filepath.Join(stage, "manifest.json"), bundle.Manifest, 0o444); err != nil {
 		return err
 	}
-	for _, directory := range []string{filepath.Join(stage, "lib", "opencode"), filepath.Join(stage, "bin"), filepath.Join(stage, "lib"), stage} {
+	for _, directory := range []string{filepath.Join(stage, "lib", "opencode"), filepath.Join(stage, "bin"), filepath.Join(stage, "lib")} {
 		if err := syncDirectory(directory); err != nil {
 			return err
 		}
@@ -93,7 +126,7 @@ func populateRelease(stage string, bundle release.Bundle) error {
 			return err
 		}
 	}
-	return nil
+	return syncDirectory(stage)
 }
 
 func copyStagedFile(source string, destination string, artifact release.BundleArtifact) error {
@@ -145,11 +178,19 @@ func writeStagedFile(path string, data []byte, mode os.FileMode) error {
 }
 
 func validateInstalledRelease(root string, bundle release.Bundle) error {
+	return validateInstalledReleaseMode(root, bundle, 0o555)
+}
+
+func validateInterruptedRelease(root string, bundle release.Bundle) error {
+	return validateInstalledReleaseMode(root, bundle, 0o700)
+}
+
+func validateInstalledReleaseMode(root string, bundle release.Bundle, rootMode os.FileMode) error {
 	hashes := make(map[string]string, len(bundle.Artifacts))
 	for _, artifact := range bundle.Artifacts {
 		hashes[filepath.FromSlash(artifact.Path)] = artifact.SHA256
 	}
-	return validateInstalledTree(root, func(path string, data []byte) error {
+	return validateInstalledTreeMode(root, rootMode, func(path string, data []byte) error {
 		if path == "manifest.json" {
 			if string(data) != string(bundle.Manifest) {
 				return ErrForeignPath
@@ -165,8 +206,12 @@ func validateInstalledRelease(root string, bundle release.Bundle) error {
 }
 
 func validateInstalledTree(root string, validate func(string, []byte) error) error {
+	return validateInstalledTreeMode(root, 0o555, validate)
+}
+
+func validateInstalledTreeMode(root string, rootMode os.FileMode, validate func(string, []byte) error) error {
 	expected := map[string]installedEntry{
-		".": {directory: true, mode: 0o555}, "bin": {directory: true, mode: 0o555},
+		".": {directory: true, mode: rootMode}, "bin": {directory: true, mode: 0o555},
 		"lib": {directory: true, mode: 0o555}, "lib/opencode": {directory: true, mode: 0o555},
 		"manifest.json": {mode: 0o444},
 	}

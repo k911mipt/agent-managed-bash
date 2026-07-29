@@ -11,7 +11,7 @@ import (
 
 func Test_BindTrustedInvocation_rejects_forged_request_assertions(t *testing.T) {
 	policy := loadTestPolicy(t)
-	workspace := filepath.Join(t.TempDir(), "workspace")
+	workspace := filepath.Join(testWorkspaceRoot(t, os.TempDir()), "workspace")
 	cwd := filepath.Join(workspace, "sub")
 	require.NoError(t, os.MkdirAll(cwd, 0o700))
 	host := HostInvocation{SessionID: "owner", WorkspacePath: workspace, Cwd: cwd}
@@ -29,7 +29,7 @@ func Test_BindTrustedInvocation_rejects_forged_request_assertions(t *testing.T) 
 func Test_TrustedInvocation_authorizes_owner_and_rejects_non_owner_cancellation(t *testing.T) {
 	policy := loadTestPolicy(t)
 	job := validRunningState().Job
-	workspace := filepath.Join(t.TempDir(), "workspace")
+	workspace := filepath.Join(testWorkspaceRoot(t, os.TempDir()), "workspace")
 	require.NoError(t, os.Mkdir(workspace, 0o700))
 	job.WorkspacePath = workspace
 	job.Cwd = workspace
@@ -52,7 +52,7 @@ func Test_TrustedInvocation_authorizes_owner_and_rejects_non_owner_cancellation(
 func Test_BindTrustedInvocation_descriptor_validates_workspace_and_nested_cwd(t *testing.T) {
 	// Given
 	policy := loadTestPolicy(t)
-	base := t.TempDir()
+	base := testWorkspaceRoot(t, os.TempDir())
 	workspace := filepath.Join(base, "workspace")
 	cwd := filepath.Join(workspace, "nested", "cwd")
 	require.NoError(t, os.MkdirAll(cwd, 0o700))
@@ -95,7 +95,7 @@ func Test_BindTrustedInvocation_descriptor_validates_workspace_and_nested_cwd(t 
 func Test_TrustedInvocation_exposes_read_only_bound_values(t *testing.T) {
 	// Given
 	policy := loadTestPolicy(t)
-	workspace := filepath.Join(t.TempDir(), "workspace")
+	workspace := filepath.Join(testWorkspaceRoot(t, os.TempDir()), "workspace")
 	cwd := filepath.Join(workspace, "cwd")
 	require.NoError(t, os.MkdirAll(cwd, 0o700))
 	invocation, decision := policy.BindTrustedInvocation(

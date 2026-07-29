@@ -3,6 +3,7 @@ import { access } from "node:fs/promises"
 export type JSONRecord = Record<string, unknown>
 
 export type ToolEvent = {
+  readonly callID: string | undefined
   readonly tool: string
   readonly status: string
   readonly action: string | undefined
@@ -57,6 +58,18 @@ export function extractJobIDs(body: string): readonly string[] {
     .filter((value, index, values) => values.indexOf(value) === index)
 }
 
+export function extractJobID(body: string, callID: string): string | undefined {
+  const request: unknown = JSON.parse(body)
+  if (!isRecord(request) || !Array.isArray(request["messages"])) return undefined
+  for (const message of request["messages"]) {
+    if (!isRecord(message) || message["role"] !== "tool" || message["tool_call_id"] !== callID) continue
+    const content = message["content"]
+    if (typeof content !== "string") return undefined
+    return /job ([A-Za-z0-9_-]+):/.exec(content)?.[1]
+  }
+  return undefined
+}
+
 export function parseToolEvents(output: string): readonly ToolEvent[] {
   const result: ToolEvent[] = []
   for (const line of output.split("\n").filter((value) => value !== "")) {
@@ -67,6 +80,7 @@ export function parseToolEvents(output: string): readonly ToolEvent[] {
     const state = part["state"]
     const input = isRecord(state["input"]) ? state["input"] : undefined
     result.push({
+      callID: typeof part["callID"] === "string" ? part["callID"] : undefined,
       tool: part["tool"],
       status: typeof state["status"] === "string" ? state["status"] : "unknown",
       action: typeof input?.["action"] === "string" ? input["action"] : undefined,

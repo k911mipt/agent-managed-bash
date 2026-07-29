@@ -15,7 +15,7 @@ func Test_Application_list_rejects_missing_host_context(t *testing.T) {
 	// Given
 	application, err := New(Config{BinaryVersion: "dev"})
 	require.NoError(t, err)
-	workspace := t.TempDir()
+	workspace := testWorkspace(t)
 	useWorkingDirectory(t, workspace)
 	t.Setenv(testHostSessionEnvironment, "")
 	t.Setenv(testHostWorkspaceEnvironment, "")
@@ -42,7 +42,7 @@ func Test_Application_list_rejects_forged_request_context(t *testing.T) {
 	// Given
 	application, err := New(Config{BinaryVersion: "dev"})
 	require.NoError(t, err)
-	workspace := t.TempDir()
+	workspace := testWorkspace(t)
 	useWorkingDirectory(t, workspace)
 	request := fmt.Sprintf(
 		`{"schema_version":1,"action":"list","context":{"session_id":"attacker","workspace_path":%q,"cwd":%q}}`,
@@ -69,7 +69,7 @@ func Test_Application_list_reports_invalid_root_workspace(t *testing.T) {
 	// Given
 	application, err := New(Config{BinaryVersion: "dev"})
 	require.NoError(t, err)
-	cwd := t.TempDir()
+	cwd := testWorkspace(t)
 	useWorkingDirectory(t, cwd)
 	request := fmt.Sprintf(
 		`{"schema_version":1,"action":"list","context":{"session_id":"session-1","workspace_path":"/","cwd":%q}}`,
@@ -93,7 +93,7 @@ func Test_Application_missing_host_context_precedes_unavailable_cwd(t *testing.T
 	require.NoError(t, err)
 	previous, err := os.Getwd()
 	require.NoError(t, err)
-	deadCwd := filepath.Join(t.TempDir(), "removed")
+	deadCwd := filepath.Join(testWorkspace(t), "removed")
 	require.NoError(t, os.Mkdir(deadCwd, 0o700))
 	require.NoError(t, os.Chdir(deadCwd))
 	t.Cleanup(func() { require.NoError(t, os.Chdir(previous)) })

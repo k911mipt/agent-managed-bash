@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import {
   extractJobIDs,
+  extractJobID,
   openAIResponse,
   parseToolEvents,
   requireCondition,
@@ -64,33 +65,38 @@ async function parallelCancelScenario(): Promise<void> {
   const firstCommand = "trap '' TERM; sleep 300 & child=$!; printf '%s %s' \"$$\" \"$child\" > pids; wait"
   const secondCommand = "while [ ! -f release-second ]; do sleep 0.05; done; printf second-complete"
   const result = await executeScenario("parallel", [firstCommand, secondCommand], async (count, body, workspace) => {
-    const jobs = extractJobIDs(body)
     if (count === 1) return toolCalls([
       { id: "run-first", input: { action: "run", command: firstCommand, hard_timeout_ms: 15_000 } },
       { id: "run-second", input: { action: "run", command: secondCommand, hard_timeout_ms: 15_000 } },
     ])
-    requireCondition(jobs.length === 2, `parallel: expected two jobs, got ${jobs.length}`)
+    const firstJob = extractJobID(body, "run-first")
+    const secondJob = extractJobID(body, "run-second")
+    requireCondition(firstJob !== undefined && secondJob !== undefined, "parallel: missing run job IDs")
     if (count === 2) {
       await waitForFile(join(workspace, "pids"))
-      return toolCalls(jobs.map((job, index) => ({
-        id: `idle-${index}`,
-        input: { action: "wait", job_id: job, timeout_ms: 2_000, idle_timeout_ms: 100 },
-      })))
+      return toolCalls([
+        { id: "idle-first", input: { action: "wait", job_id: firstJob, timeout_ms: 2_000, idle_timeout_ms: 100 } },
+        { id: "idle-second", input: { action: "wait", job_id: secondJob, timeout_ms: 2_000, idle_timeout_ms: 100 } },
+      ])
     }
     if (count === 3) {
       await writeFile(join(workspace, "release-second"), "")
       return toolCalls([
-        { id: "cancel-first", input: { action: "cancel", job_id: jobs[0] } },
-        { id: "finish-second", input: { action: "wait", job_id: jobs[1], timeout_ms: 10_000, idle_timeout_ms: 10_000 } },
+        { id: "cancel-first", input: { action: "cancel", job_id: firstJob } },
+        { id: "finish-second", input: { action: "wait", job_id: secondJob, timeout_ms: 10_000, idle_timeout_ms: 10_000 } },
       ])
     }
     if (count === 4) return toolCalls([
-      { id: "finish-first", input: { action: "wait", job_id: jobs[0], timeout_ms: 10_000, idle_timeout_ms: 10_000 } },
+      { id: "finish-first", input: { action: "wait", job_id: firstJob, timeout_ms: 30_000, idle_timeout_ms: 30_000 } },
     ])
     return textResponse("parallel controls complete")
   })
   requireActionCounts(result, { run: 2, wait: 4, cancel: 1 })
-  requireCondition(result.events.some((event) => event.output?.includes(": cancelled")), "parallel: cancelled status missing")
+  const finishFirst = result.events.find((event) => event.callID === "finish-first")
+  requireCondition(
+    finishFirst?.output?.includes(": cancelled") === true,
+    `parallel: cancelled status missing in ${JSON.stringify(result.events)}`,
+  )
   requireCondition(result.events.some((event) => event.output?.includes("second-complete")), "parallel: completion missing")
   const pids = (await readFile(join(result.workspace, "pids"), "utf8")).trim().split(" ").map(Number)
   for (const pid of pids) await waitForProcessExit(pid)

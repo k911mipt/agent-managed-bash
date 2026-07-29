@@ -50,6 +50,7 @@ func OpenStoreAt(invocation state.TrustedInvocation, contracts contract.Contract
 		sessionID: invocation.SessionID(), contracts: contracts,
 	}
 	store.syncJobs = jobs.Sync
+	store.syncDirectory = func(file *os.File) error { return file.Sync() }
 	store.closeJob = func(file *os.File) error { return file.Close() }
 	store.lockTimeout = defaultStateLockTimeout
 	store.lockPoll = defaultStateLockPoll
@@ -91,9 +92,10 @@ func (store *Store) prepare(initial generated.PersistedJobState, runtime Runtime
 		return nil, err
 	}
 	cleanup := func(cause error) error {
-		return errors.Join(cause, removeDirectoryContents(directory), directory.Close(), removeDirectory(store.jobs, pendingName))
+		_, removeErr := removeDirectoryContents(directory, store.syncDirectory)
+		return errors.Join(cause, removeErr, directory.Close(), removeDirectory(store.jobs, pendingName))
 	}
-	for _, name := range []string{"state.lock", "runner.lock", "output.log"} {
+	for _, name := range []string{"state.lock", "runner.lock", "recovery.lock", "output.log"} {
 		if err := createSyncedFile(directory, name); err != nil {
 			return nil, cleanup(err)
 		}
@@ -148,7 +150,8 @@ func (pending *pendingJob) abort() error {
 	}
 	pending.settled = true
 	err := pending.lease.release()
-	err = errors.Join(err, removeDirectoryContents(pending.dir), pending.dir.Close())
+	_, removeErr := removeDirectoryContents(pending.dir, pending.store.syncDirectory)
+	err = errors.Join(err, removeErr, pending.dir.Close())
 	pending.dir = nil
 	return errors.Join(err, removeDirectory(pending.store.jobs, pending.name))
 }

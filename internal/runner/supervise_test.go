@@ -41,11 +41,11 @@ func (*countingCanceledContext) Value(any) any {
 
 func Test_superviseShell_handles_context_cancellation_once(t *testing.T) {
 	// Given
-	cwd, err := openWorkspaceDirectory(t.TempDir())
+	cwd, err := openWorkspaceDirectory(testWorkspace(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, cwd.Close()) })
 	shell, _, err := startShell(internalStartRequest{
-		Cwd: t.TempDir(), Command: `trap '' TERM; exec sleep 10`, HardTimeoutMs: 10_000,
+		Cwd: testWorkspace(t), Command: `trap '' TERM; exec sleep 10`, HardTimeoutMs: 10_000,
 	}, cwd)
 	require.NoError(t, err)
 	ctx := newCountingCanceledContext()

@@ -21,7 +21,7 @@ import (
 
 func Test_Manager_aborts_prepared_job_when_caller_dies_before_commit(t *testing.T) {
 	// Given
-	workspace := t.TempDir()
+	workspace := testWorkspace(t)
 	preparedPath := filepath.Join(workspace, "prepared")
 	shellPIDPath := filepath.Join(workspace, "shell-pid")
 	executable, err := os.Executable()
@@ -69,7 +69,7 @@ func Test_Manager_aborts_prepared_job_when_caller_dies_before_commit(t *testing.
 
 func Test_Manager_returns_committed_job_when_context_is_canceled_after_commit(t *testing.T) {
 	// Given
-	workspace := t.TempDir()
+	workspace := testWorkspace(t)
 	executable, err := os.Executable()
 	require.NoError(t, err)
 	manager, err := New(Config{Executable: executable, StartupTimeout: time.Second, TerminationGrace: 50 * time.Millisecond})
@@ -95,11 +95,19 @@ func Test_Manager_returns_committed_job_when_context_is_canceled_after_commit(t 
 	observation, statusErr := manager.Status(context.Background(), StatusRequest{Invocation: owner, JobID: job.JobID})
 	require.NoError(t, statusErr)
 	require.Equal(t, job.JobID, observation.Job.JobID)
+	waitForCondition(t, time.Second, func() bool {
+		_, removeErr := manager.Remove(context.Background(), RemoveRequest{Invocation: owner, JobID: job.JobID})
+		if errors.Is(removeErr, ErrActiveJob) || errors.Is(removeErr, ErrRunnerActive) {
+			return false
+		}
+		require.NoError(t, removeErr)
+		return true
+	})
 }
 
 func Test_PendingJob_returns_lease_when_parent_sync_fails_after_publication(t *testing.T) {
 	// Given
-	workspace := t.TempDir()
+	workspace := testWorkspace(t)
 	contracts, err := contract.Load()
 	require.NoError(t, err)
 	invocation, decision := contracts.Policy().BindTrustedInvocation(
@@ -148,7 +156,7 @@ func Test_committedResult_returns_metadata_with_durability_error(t *testing.T) {
 }
 
 func Test_recoverCommitted_returns_visible_metadata_with_uncertain_durability(t *testing.T) {
-	workspace := t.TempDir()
+	workspace := testWorkspace(t)
 	contracts, err := contract.Load()
 	require.NoError(t, err)
 	invocation, decision := contracts.Policy().BindTrustedInvocation(
@@ -189,7 +197,7 @@ func Test_recoverCommitted_returns_visible_metadata_with_uncertain_durability(t 
 
 func Test_createPrivateDirectory_removes_staging_directory_when_open_fails(t *testing.T) {
 	// Given
-	workspace := t.TempDir()
+	workspace := testWorkspace(t)
 	parent, err := openWorkspaceDirectory(workspace)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, parent.Close()) })
@@ -210,7 +218,7 @@ func Test_createPrivateDirectory_removes_staging_directory_when_open_fails(t *te
 
 func Test_createPrivateDirectory_removes_staging_directory_when_sync_fails(t *testing.T) {
 	// Given
-	workspace := t.TempDir()
+	workspace := testWorkspace(t)
 	parent, err := openWorkspaceDirectory(workspace)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, parent.Close()) })

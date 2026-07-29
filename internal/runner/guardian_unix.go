@@ -24,6 +24,9 @@ func startShell(request internalStartRequest, cwd *os.File) (*runningShell, gene
 	if err != nil {
 		return nil, 0, fmt.Errorf("create merged output pipe: %w", err)
 	}
+	if err := preparePipeReader(outputReader); err != nil {
+		return nil, 0, errors.Join(fmt.Errorf("prepare merged output pipe reader: %w", err), outputReader.Close(), outputWriter.Close())
+	}
 	commandReader, commandWriter, err := os.Pipe()
 	if err != nil {
 		return nil, 0, errors.Join(err, outputReader.Close(), outputWriter.Close())
@@ -31,6 +34,12 @@ func startShell(request internalStartRequest, cwd *os.File) (*runningShell, gene
 	events, control, err := os.Pipe()
 	if err != nil {
 		return nil, 0, errors.Join(err, outputReader.Close(), outputWriter.Close(), commandReader.Close(), commandWriter.Close())
+	}
+	if err := preparePipeReader(events); err != nil {
+		return nil, 0, errors.Join(
+			fmt.Errorf("prepare guardian events pipe reader: %w", err),
+			outputReader.Close(), outputWriter.Close(), commandReader.Close(), commandWriter.Close(), events.Close(), control.Close(),
+		)
 	}
 	devNull, err := os.Open("/dev/null")
 	if err != nil {

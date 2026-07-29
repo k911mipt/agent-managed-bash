@@ -55,7 +55,7 @@ func Test_Application_rejects_symlink_workspace_and_outside_cwd(t *testing.T) {
 	// Given
 	application, err := New(Config{BinaryVersion: "dev"})
 	require.NoError(t, err)
-	base := t.TempDir()
+	base := testWorkspace(t)
 	workspace := filepath.Join(base, "workspace")
 	require.NoError(t, os.Mkdir(workspace, 0o700))
 	workspaceLink := filepath.Join(base, "workspace-link")

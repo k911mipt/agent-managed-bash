@@ -5,49 +5,108 @@ package runner
 import (
 	"context"
 	"errors"
+	"os"
+	"time"
 
 	"github.com/k911mipt/agent-managed-bash/internal/protocol/generated"
 	"github.com/k911mipt/agent-managed-bash/internal/state"
 	"golang.org/x/sys/unix"
 )
 
-func (store *Store) removeTerminal(ctx context.Context, jobID generated.JobID) (err error) {
-	job, err := store.openLockedJobContext(ctx, jobID)
+func (store *Store) removeTerminal(ctx context.Context, jobID generated.JobID) error {
+	snapshot, err := store.openSnapshotJob(jobID)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		err = errors.Join(err, job.close())
-	}()
 	authorization := store.contracts.Policy().AuthorizeMutation(state.AccessContext{
-		JobWorkspace: job.state.Job.WorkspacePath, RequestWorkspace: store.workspace,
-		OwnerSession: job.state.Job.OwnerSessionID, ActorSession: store.sessionID,
+		JobWorkspace: snapshot.state.Job.WorkspacePath, RequestWorkspace: store.workspace,
+		OwnerSession: snapshot.state.Job.OwnerSessionID, ActorSession: store.sessionID,
 	})
+	running := snapshot.state.Job.Status == generated.JobStatusRunning
+	if closeErr := snapshot.close(); closeErr != nil {
+		return closeErr
+	}
 	if !authorization.Allowed {
 		return decisionError(authorization.Code)
 	}
-	if err := store.reconcileRunnerLostLocked(job, jobID); err != nil {
-		return err
-	}
-	decision := store.contracts.Policy().AuthorizeRemoval(job.state.Job.Status)
-	if !decision.Allowed {
-		if decision.Code == state.CodeActiveJob {
+	if running {
+		active, err := store.runnerLeaseActive(jobID)
+		if err != nil {
+			return err
+		}
+		if active {
 			return ErrActiveJob
 		}
-		return ErrCorruptState
+		runnerActive, err := store.reconcileRunnerState(ctx, jobID, time.Now().Add(store.lockTimeout))
+		if err != nil {
+			return err
+		}
+		if runnerActive {
+			return ErrActiveJob
+		}
 	}
-	runnerLock, err := openPrivateFileAt(job.dir, "runner.lock", unix.O_RDWR)
+	directory, err := openDirectoryAt(store.jobs, string(jobID), true)
 	if err != nil {
 		return err
 	}
+	runnerLock, err := openPrivateFileAt(directory, "runner.lock", unix.O_RDWR)
+	if err != nil {
+		return errors.Join(err, directory.Close())
+	}
 	if err := lockFile(runnerLock, true); err != nil {
-		return errors.Join(err, runnerLock.Close())
+		return errors.Join(err, runnerLock.Close(), directory.Close())
 	}
-	defer func() {
-		err = errors.Join(err, unlockFile(runnerLock), runnerLock.Close())
-	}()
-	if err := removeDirectoryContents(job.dir); err != nil {
-		return err
+	if err := directory.Close(); err != nil {
+		return errors.Join(err, unlockFile(runnerLock), runnerLock.Close())
 	}
-	return removeDirectory(store.jobs, string(jobID))
+	job, err := store.openLockedJobWith(jobID, func(file *os.File) error {
+		return lockStateFile(ctx, file, store.lockTimeout, store.lockPoll)
+	})
+	if err != nil {
+		return errors.Join(err, unlockFile(runnerLock), runnerLock.Close())
+	}
+	authorization = store.contracts.Policy().AuthorizeMutation(state.AccessContext{
+		JobWorkspace: job.state.Job.WorkspacePath, RequestWorkspace: store.workspace,
+		OwnerSession: job.state.Job.OwnerSessionID, ActorSession: store.sessionID,
+	})
+	var operationErr error
+	contentsRemoved := false
+	if !authorization.Allowed {
+		operationErr = decisionError(authorization.Code)
+	} else if decision := store.contracts.Policy().AuthorizeRemoval(job.state.Job.Status); !decision.Allowed {
+		if decision.Code == state.CodeActiveJob {
+			operationErr = ErrActiveJob
+		} else {
+			operationErr = ErrCorruptState
+		}
+	} else {
+		removal, removeErr := removeDirectoryContents(job.dir, store.syncDirectory)
+		operationErr = removeErr
+		contentsRemoved = removal.emptied
+	}
+	stateCloseErr := errors.Join(unlockFile(job.stateLock), job.stateLock.Close(), store.closeJob(job.dir))
+	runnerCloseErr := errors.Join(unlockFile(runnerLock), runnerLock.Close())
+	cleanupErr := errors.Join(operationErr, stateCloseErr, runnerCloseErr)
+	if !contentsRemoved {
+		return cleanupErr
+	}
+	return errors.Join(cleanupErr, removeDirectory(store.jobs, string(jobID)))
+}
+
+func (store *Store) runnerLeaseActive(jobID generated.JobID) (bool, error) {
+	directory, err := openDirectoryAt(store.jobs, string(jobID), true)
+	if err != nil {
+		return false, err
+	}
+	runnerLock, err := openPrivateFileAt(directory, "runner.lock", unix.O_RDWR)
+	if err != nil {
+		return false, errors.Join(err, directory.Close())
+	}
+	if err := lockFile(runnerLock, true); err != nil {
+		if errors.Is(err, ErrRunnerActive) {
+			return true, errors.Join(runnerLock.Close(), directory.Close())
+		}
+		return false, errors.Join(err, runnerLock.Close(), directory.Close())
+	}
+	return false, errors.Join(unlockFile(runnerLock), runnerLock.Close(), directory.Close())
 }

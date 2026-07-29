@@ -33,10 +33,21 @@ func signalProcessGroup(processGroupID int, signal unix.Signal) error {
 	if processGroupID <= 0 {
 		return ErrExecution
 	}
-	if err := unix.Kill(-processGroupID, signal); err != nil && !errors.Is(err, unix.ESRCH) {
+	if err := unix.Kill(-processGroupID, signal); err != nil && !errors.Is(err, unix.ESRCH) &&
+		!benignProcessGroupSignalError(processGroupID, err) {
 		return fmt.Errorf("signal process group %d: %w", processGroupID, err)
 	}
 	return nil
+}
+
+func reconcileProcessGroupSignalErrors(processGroupID int, signalErrors ...error) error {
+	var result error
+	for _, err := range signalErrors {
+		if err != nil && !benignProcessGroupSignalError(processGroupID, err) {
+			result = errors.Join(result, err)
+		}
+	}
+	return result
 }
 
 func VerifyProcessIdentity(pid int, expected string) (bool, error) {

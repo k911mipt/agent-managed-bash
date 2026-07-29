@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"time"
 
 	"github.com/k911mipt/agent-managed-bash/internal/protocol/generated"
 	"github.com/k911mipt/agent-managed-bash/internal/state"
@@ -29,6 +30,38 @@ func (store *Store) openLockedJob(jobID generated.JobID) (*lockedJob, error) {
 }
 
 func (store *Store) openLockedJobContext(ctx context.Context, jobID generated.JobID) (*lockedJob, error) {
+	deadline := time.Now().Add(store.lockTimeout)
+	for {
+		if err := store.waitForTerminalIntent(ctx, jobID, deadline); err != nil {
+			return nil, err
+		}
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return nil, ErrStateLockTimeout
+		}
+		job, err := store.openLockedJobWith(jobID, func(file *os.File) error {
+			return lockStateFile(ctx, file, remaining, store.lockPoll)
+		})
+		if err != nil {
+			return nil, err
+		}
+		if store.afterMutationLock != nil {
+			store.afterMutationLock()
+		}
+		intentExists, err := terminalIntentExists(job.dir)
+		if err != nil {
+			return nil, errors.Join(err, job.close())
+		}
+		if !intentExists {
+			return job, nil
+		}
+		if err := job.close(); err != nil {
+			return nil, err
+		}
+	}
+}
+
+func (store *Store) openLockedJobWith(jobID generated.JobID, acquireLock func(*os.File) error) (*lockedJob, error) {
 	if !validJobID(jobID) {
 		return nil, ErrInvalidJobID
 	}
@@ -40,7 +73,7 @@ func (store *Store) openLockedJobContext(ctx context.Context, jobID generated.Jo
 	if err != nil {
 		return nil, errors.Join(err, directory.Close())
 	}
-	if err := lockStateFile(ctx, stateLock, store.lockTimeout, store.lockPoll); err != nil {
+	if err := acquireLock(stateLock); err != nil {
 		return nil, errors.Join(err, stateLock.Close(), directory.Close())
 	}
 	raw, err := readPrivateFileAt(directory, "state.json", maximumStateBytes)

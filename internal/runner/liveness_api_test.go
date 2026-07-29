@@ -146,7 +146,7 @@ func newLostRunnerFixture(
 	runtime RuntimeMetadata,
 ) (*Manager, state.TrustedInvocation, generated.JobID) {
 	t.Helper()
-	workspace := t.TempDir()
+	workspace := testWorkspace(t)
 	contracts, err := contract.Load()
 	require.NoError(t, err)
 	invocation, decision := contracts.Policy().BindTrustedInvocation(
@@ -170,7 +170,7 @@ func newLostRunnerFixture(
 
 func newInternalTestJob(t *testing.T) (*Store, generated.PersistedJobState, *RunnerLease) {
 	t.Helper()
-	workspace := t.TempDir()
+	workspace := testWorkspace(t)
 	contracts, err := contract.Load()
 	require.NoError(t, err)
 	invocation, decision := contracts.Policy().BindTrustedInvocation(

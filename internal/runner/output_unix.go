@@ -66,17 +66,17 @@ func (store *Store) appendOutput(jobID generated.JobID, incoming []byte) (result
 }
 
 func (store *Store) ReadOutput(jobID generated.JobID) (output []byte, err error) {
-	job, err := store.openLockedJob(jobID)
+	job, err := store.openSnapshotJob(jobID)
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
 		err = errors.Join(err, job.close())
 	}()
-	return readOutputLocked(job)
+	return readOutputSnapshot(job)
 }
 
-func readOutputLocked(job *lockedJob) ([]byte, error) {
+func readOutputSnapshot(job *snapshotJob) ([]byte, error) {
 	file, err := openPrivateFileAt(job.dir, "output.log", unix.O_RDONLY)
 	if err != nil {
 		return nil, err

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/k911mipt/agent-managed-bash/internal/runner"
@@ -35,6 +36,33 @@ func useWorkingDirectory(t *testing.T, path string) {
 	require.NoError(t, err)
 	require.NoError(t, os.Chdir(path))
 	t.Cleanup(func() { require.NoError(t, os.Chdir(previous)) })
+}
+
+func testWorkspace(t *testing.T) string {
+	t.Helper()
+	physicalTemporaryRoot, err := filepath.EvalSymlinks(os.TempDir())
+	require.NoError(t, err)
+	workspace, err := os.MkdirTemp(physicalTemporaryRoot, "amb-cli-")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, os.RemoveAll(workspace)) })
+	return workspace
+}
+
+func Test_testWorkspace_returns_physical_path_when_TMPDIR_is_symlinked(t *testing.T) {
+	// Given
+	testRoot, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	physicalTemporaryRoot := filepath.Join(testRoot, "physical-tmp")
+	linkedTemporaryRoot := filepath.Join(testRoot, "linked-tmp")
+	require.NoError(t, os.Mkdir(physicalTemporaryRoot, 0o700))
+	require.NoError(t, os.Symlink(physicalTemporaryRoot, linkedTemporaryRoot))
+	t.Setenv("TMPDIR", linkedTemporaryRoot)
+
+	// When
+	workspace := testWorkspace(t)
+
+	// Then
+	require.Equal(t, physicalTemporaryRoot, filepath.Dir(workspace))
 }
 
 type testClient struct {

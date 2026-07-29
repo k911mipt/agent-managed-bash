@@ -5,6 +5,8 @@ set -eu
 binary=${1:?managed-bash binary path is required}
 temp_dir=$(mktemp -d)
 trap 'rm -rf "$temp_dir"' EXIT HUP INT TERM
+canonical_temp_dir=$(cd "$temp_dir" && pwd -P)
+temp_dir=$canonical_temp_dir
 workspace="$temp_dir/workspace"
 mkdir -p "$workspace"
 

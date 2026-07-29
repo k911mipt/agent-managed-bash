@@ -13,7 +13,7 @@ import (
 func Test_OpenWorkspacePath_rejects_workspace_replaced_by_symlink_before_open(t *testing.T) {
 	// Given
 	policy := loadTestPolicy(t)
-	base := t.TempDir()
+	base := testWorkspaceRoot(t, os.TempDir())
 	workspace := filepath.Join(base, "workspace")
 	outside := filepath.Join(base, "outside")
 	require.NoError(t, os.Mkdir(workspace, 0o700))
@@ -46,7 +46,7 @@ func Test_OpenWorkspacePath_rejects_workspace_replaced_by_symlink_before_open(t 
 func Test_OpenWorkspacePath_rejects_component_replaced_by_same_inode_symlink_before_open(t *testing.T) {
 	// Given
 	policy := loadTestPolicy(t)
-	workspace := filepath.Join(t.TempDir(), "workspace")
+	workspace := filepath.Join(testWorkspaceRoot(t, os.TempDir()), "workspace")
 	subdirectory := filepath.Join(workspace, "sub")
 	require.NoError(t, os.MkdirAll(subdirectory, 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(subdirectory, "file"), []byte("inside"), 0o600))

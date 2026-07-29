@@ -94,7 +94,9 @@ func Test_VerifyBundle_rejects_incompatible_identity(t *testing.T) {
 
 func writeTestBundle(t *testing.T, version string) string {
 	t.Helper()
-	root := filepath.Join(t.TempDir(), "agent-managed-bash-"+version+"-"+runtime.GOOS+"-"+runtime.GOARCH)
+	parent, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	root := filepath.Join(parent, "agent-managed-bash-"+version+"-"+runtime.GOOS+"-"+runtime.GOARCH)
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "bin"), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "lib", "opencode"), 0o755))
 	payloads := validTestPayloads()

@@ -42,6 +42,9 @@ func (manager *Manager) PrepareWait(ctx context.Context, request WaitRequest) (p
 		metadata, resolved, err := store.waitMetadata(waitContext, request.JobID, request.Invocation.SessionID(), cursor)
 		if err != nil {
 			if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+				if manager.beforeWaitOutput != nil {
+					manager.beforeWaitOutput()
+				}
 				observation, snapshotCursor, snapshotErr := store.waitSnapshot(request.JobID, request.Invocation.SessionID(), cursor)
 				if snapshotErr != nil {
 					return nil, snapshotErr
@@ -60,6 +63,9 @@ func (manager *Manager) PrepareWait(ctx context.Context, request WaitRequest) (p
 		}
 		if metadata.Job.Status != generated.JobStatusRunning || !now.Before(absoluteDeadline) ||
 			!now.Before(idleDeadline) {
+			if manager.beforeWaitOutput != nil {
+				manager.beforeWaitOutput()
+			}
 			observation, err := store.waitOutput(waitContext, request.JobID, resolved)
 			if err != nil {
 				if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
@@ -69,7 +75,14 @@ func (manager *Manager) PrepareWait(ctx context.Context, request WaitRequest) (p
 			if err != nil {
 				return nil, err
 			}
-			return newPreparedWait(manager, request, observation, resolved, now), nil
+			returnedAt := time.Now()
+			if observation.Observation.Job.Status == generated.JobStatusRunning && returnedAt.Before(absoluteDeadline) &&
+				observation.Observation.Job.CapturedBytes > lastCaptured {
+				lastCaptured = observation.Observation.Job.CapturedBytes
+				idleDeadline = returnedAt.Add(idle)
+				continue
+			}
+			return newPreparedWait(manager, request, observation, resolved, returnedAt), nil
 		}
 		pause := min(manager.config.PollInterval, time.Until(absoluteDeadline), time.Until(idleDeadline))
 		timer := time.NewTimer(max(pause, time.Millisecond))
@@ -109,13 +122,9 @@ func (store *Store) waitSnapshot(jobID generated.JobID, sessionID generated.Sess
 		return generated.OutputObservation{}, 0, err
 	}
 	defer directory.Close()
-	raw, err := readPrivateFileAt(directory, "state.json", maximumStateBytes)
+	persisted, err := store.readState(directory, jobID)
 	if err != nil {
 		return generated.OutputObservation{}, 0, err
-	}
-	persisted, decision := store.contracts.StateValidator().ValidateStored(raw, store.workspace)
-	if !decision.Allowed || persisted.Job.JobID != jobID {
-		return generated.OutputObservation{}, 0, ErrCorruptState
 	}
 	if decision := store.contracts.Policy().AuthorizeRead(state.AccessContext{
 		JobWorkspace: persisted.Job.WorkspacePath, RequestWorkspace: store.workspace,
@@ -132,7 +141,7 @@ func (store *Store) waitSnapshot(jobID generated.JobID, sessionID generated.Sess
 	}
 	resolved := store.contracts.Policy().ResolveWaitCursor(state.WaitCursorContext{Explicit: explicit, Observer: existing})
 	payload := generated.OutputPayload{JobID: jobID, StartCursorBytes: &resolved}
-	observation, err := store.outputLocked(&lockedJob{dir: directory, state: persisted}, payload)
+	observation, err := store.outputSnapshot(&snapshotJob{dir: directory, state: persisted}, payload)
 	return observation, resolved, err
 }
 
@@ -142,7 +151,7 @@ func (store *Store) waitMetadata(
 	sessionID generated.SessionID,
 	explicit *generated.ByteCursor,
 ) (observation generated.JobObservation, cursor generated.ByteCursor, err error) {
-	job, err := store.openObservedJob(ctx, jobID)
+	job, err := store.openObservedSnapshot(ctx, jobID)
 	if err != nil {
 		return generated.JobObservation{}, 0, err
 	}
@@ -165,13 +174,13 @@ func (store *Store) waitMetadata(
 }
 
 func (store *Store) waitOutput(ctx context.Context, jobID generated.JobID, cursor generated.ByteCursor) (observation generated.OutputObservation, err error) {
-	job, err := store.openObservedJob(ctx, jobID)
+	job, err := store.openObservedSnapshot(ctx, jobID)
 	if err != nil {
 		return generated.OutputObservation{}, err
 	}
 	defer func() { err = errors.Join(err, job.close()) }()
 	payload := generated.OutputPayload{JobID: jobID, StartCursorBytes: &cursor}
-	return store.outputLocked(job, payload)
+	return store.outputSnapshot(job, payload)
 }
 
 func (prepared *PreparedWait) commit(ctx context.Context) error {
@@ -194,11 +203,17 @@ func (prepared *PreparedWait) commit(ctx context.Context) error {
 }
 
 func (store *Store) commitWait(ctx context.Context, prepared *PreparedWait) (returnErr error) {
-	job, err := store.openObservedJob(ctx, prepared.jobID)
+	job, err := store.openLockedJobContext(ctx, prepared.jobID)
 	if err != nil {
 		return err
 	}
 	defer func() { returnErr = errors.Join(returnErr, job.close()) }()
+	if decision := store.contracts.Policy().AuthorizeRead(state.AccessContext{
+		JobWorkspace: job.state.Job.WorkspacePath, RequestWorkspace: store.workspace,
+		OwnerSession: job.state.Job.OwnerSessionID, ActorSession: store.sessionID,
+	}); !decision.Allowed {
+		return decisionError(decision.Code)
+	}
 	index := -1
 	current := generated.ObserverCursor{
 		SessionID: store.sessionID, UpdatedAtUnixMs: job.state.Job.CreatedAtUnixMs,
@@ -213,8 +228,12 @@ func (store *Store) commitWait(ctx context.Context, prepared *PreparedWait) (ret
 	if index >= 0 && current.CursorBytes >= prepared.cursor {
 		return nil
 	}
+	updatedAt := prepared.updatedAt
+	if finished := job.state.Job.FinishedAtUnixMs; finished != nil {
+		updatedAt = min(updatedAt, *finished)
+	}
 	nextObserver, decision := store.contracts.Policy().ObserverAfter(state.ObserverAdvanceContext{
-		Action: generated.ActionWait, Current: current, Output: prepared.output, UpdatedAtUnixMs: prepared.updatedAt,
+		Action: generated.ActionWait, Current: current, Output: prepared.output, UpdatedAtUnixMs: updatedAt,
 	})
 	if !decision.Allowed {
 		return decisionError(decision.Code)

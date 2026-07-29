@@ -30,30 +30,113 @@ bun install --frozen-lockfile
 
 ## Build and install
 
-Build deterministic archives for Linux and macOS on amd64 and arm64:
+### Public pinned install
+
+Use one explicit `vMAJOR.MINOR.PATCH` tag. The command below downloads the
+bootstrap from that immutable GitHub Release and lets it select the archive
+for the current host. It needs no GitHub token.
+
+```sh
+tag=v0.1.0
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' 0 HUP INT TERM
+curl --fail --location --proto '=https' --proto-redir '=https' \
+  "https://github.com/k911mipt/agent-managed-bash/releases/download/$tag/install-release.sh" \
+  >"$tmp/install-release.sh"
+chmod 700 "$tmp/install-release.sh"
+"$tmp/install-release.sh" "$tag"
+```
+
+The bootstrap accepts exactly one `vMAJOR.MINOR.PATCH` argument. It maps
+Darwin arm64 and amd64, and Linux arm64 and amd64, downloads `SHA256SUMS` and
+the matching archive over HTTPS, verifies one canonical checksum, validates
+the archive layout, and only then invokes the existing per-user installer.
+The loopback base URL override exists for local tests only:
+`MANAGED_BASH_RELEASE_BASE_URL=http://127.0.0.1:<port>/<path>`.
+
+The release contains four native archives, `install-release.sh`, the npm
+plugin tarball, `SHA256SUMS`, and five SPDX 2.3 SBOM files. The archive and
+package bytes are verified before publication and are not rebuilt during
+publication or recovery.
+
+To build the same native archives locally, use a checkout and an explicit
+source timestamp:
 
 ```sh
 SOURCE_DATE_EPOCH=1700000000 make release-package
 ```
 
-The command writes four archives under `dist/`. Before a private GitHub Release exists, build them from a checkout or transfer the matching archive to the target machine.
+The command writes four archives under `dist/`. This is a local development
+path, not a substitute for the pinned public release command.
 
-Repository readers can download a private release with an authenticated GitHub CLI:
+### Verify release assets
+
+For an additional release-level check, download the public assets with the
+GitHub CLI. `gh release verify-asset` is optional because the bootstrap already
+checks `SHA256SUMS` before extraction.
 
 ```sh
-gh auth status
-gh release download v0.1.0 \
+tag=v0.1.0
+version=${tag#v}
+gh release download "$tag" \
   --repo k911mipt/agent-managed-bash \
   --pattern 'agent-managed-bash-*.tar.gz' \
-  --pattern SHA256SUMS
+  --pattern 'k911mipt-opencode-agent-managed-bash-*.tgz' \
+  --pattern 'install-release.sh' \
+  --pattern 'SHA256SUMS' \
+  --pattern '*.spdx.json'
 if command -v sha256sum >/dev/null 2>&1; then
   sha256sum -c SHA256SUMS
 else
   shasum -a 256 -c SHA256SUMS
 fi
+
+for asset in \
+  "agent-managed-bash-${version}-linux-amd64.tar.gz" \
+  "agent-managed-bash-${version}-linux-arm64.tar.gz" \
+  "agent-managed-bash-${version}-darwin-amd64.tar.gz" \
+  "agent-managed-bash-${version}-darwin-arm64.tar.gz" \
+  "install-release.sh" \
+  "k911mipt-opencode-agent-managed-bash-${version}.tgz"; do
+  gh release verify-asset "$tag" "$asset" --repo k911mipt/agent-managed-bash
+done
+
+for asset in \
+  agent-managed-bash-*.tar.gz \
+  install-release.sh \
+  k911mipt-opencode-agent-managed-bash-*.tgz \
+  *.spdx.json \
+  SHA256SUMS; do
+  gh attestation verify "$asset" \
+    --repo k911mipt/agent-managed-bash \
+    --signer-workflow k911mipt/agent-managed-bash/.github/workflows/release.yml \
+    --predicate-type https://slsa.dev/provenance/v1 \
+    --source-ref "refs/tags/$tag"
+done
+
+for asset in \
+  "agent-managed-bash-${version}-linux-amd64.tar.gz" \
+  "agent-managed-bash-${version}-linux-arm64.tar.gz" \
+  "agent-managed-bash-${version}-darwin-amd64.tar.gz" \
+  "agent-managed-bash-${version}-darwin-arm64.tar.gz" \
+  "k911mipt-opencode-agent-managed-bash-${version}.tgz"; do
+  gh attestation verify "$asset" \
+    --repo k911mipt/agent-managed-bash \
+    --signer-workflow k911mipt/agent-managed-bash/.github/workflows/release.yml \
+    --predicate-type https://spdx.dev/Document/v2.3 \
+    --source-ref "refs/tags/$tag"
+done
 ```
 
-Select and install only the archive matching the target host. Private release downloads require repository access and GitHub authentication. Public token-free downloads are deferred to issue #11.
+The first loop checks the release binding for the six primary downloadable
+assets. The second checks SLSA provenance for all twelve release assets. The
+third checks the five SPDX subject attestations against the four native
+archives and the npm tarball. For each of those five results, compare the
+verified predicate content and digest with the corresponding downloadable
+`<asset>.spdx.json`. Task 14 automates that comparison. Verifying provenance
+for an SBOM file alone does not establish its subject and predicate binding.
+`gh attestation verify` requires a current GitHub CLI and public network
+access.
 
 ### Manual archive installation
 
@@ -112,7 +195,26 @@ Add the printed URL to the `plugin` array in `${XDG_CONFIG_HOME:-$HOME/.config}/
 
 Restart OpenCode after an install or update so it loads the plugin and binary from the same release.
 
-A future published package can be selected with the npm plugin spec `"@k911mipt/opencode-agent-managed-bash"`. Configure either the local file URL for development or the npm spec for a published release, not both at once.
+For a published release, install the matching npm plugin in the OpenCode
+project and register one npm spec:
+
+```sh
+npm install --ignore-scripts --no-audit --no-fund \
+  @k911mipt/opencode-agent-managed-bash@0.1.0
+```
+
+```jsonc
+{
+  "plugin": [
+    "@k911mipt/opencode-agent-managed-bash@0.1.0"
+  ]
+}
+```
+
+The npm package contains only the OpenCode plugin. It does not contain or
+install the native `managed-bash` binary. Install the matching native archive
+with the pinned bootstrap first. Use either the npm spec or an encoded local
+`file://` URL for development. Never register both entries.
 
 Check the installed binary:
 
@@ -120,7 +222,17 @@ Check the installed binary:
 printf '%s' '{"schema_version":1,"action":"version"}' | managed-bash version
 ```
 
-Running `install.sh` again with the same archive is a no-op unless it needs to remove an installer-owned legacy auto-discovery symlink. An update stages an immutable release and switches the `current` symlink after validation. A failed update restores the previous pointer. The installer keeps previous complete releases for rollback and does not remove them automatically.
+Running `install.sh` again with the same archive is a no-op unless it needs to
+remove an installer-owned legacy auto-discovery symlink. An update stages an
+immutable release and switches the `current` symlink after validation. If a
+reinstall fails, the installer preserves the current release, symlink target,
+and target inode, and does not fall back to another binary. This is failed
+reinstall preservation, not a public rollback command.
+
+The installer has a transactional internal rollback guarantee while it is
+switching releases. It keeps previous complete releases until uninstall.
+Cross-version public rollback needs a second immutable release and is
+deferred. The first release has no public rollback command.
 
 Uninstall from an extracted archive for the same host:
 
@@ -128,7 +240,12 @@ Uninstall from an extracted archive for the same host:
 ./uninstall.sh
 ```
 
-Uninstall removes installer-owned releases, the CLI registration, and any legacy installer-owned auto-discovery symlink. It does not edit OpenCode configuration, so remove the explicit plugin entry separately. It does not inspect or delete `.managed_bash` directories in workspaces, and detached jobs that already started can finish.
+Uninstall removes installer-owned releases, the CLI registration, and any
+legacy installer-owned auto-discovery symlink. It does not edit OpenCode
+configuration. Remove the matching npm spec or local `file://` entry from the
+`plugin` array yourself, then run `opencode debug config` and confirm the entry
+is gone. Uninstall does not inspect or delete `.managed_bash` directories in
+workspaces, and detached jobs that already started can finish.
 
 ## Selection and compatibility
 
@@ -137,7 +254,18 @@ The plugin resolves the CLI in this order:
 1. `MANAGED_BASH_BINARY`, when set.
 2. `managed-bash` from `PATH`.
 
-The plugin resolves that selection to one physical release path for the lifetime of the OpenCode process. This prevents a loaded plugin from switching to a different binary when an installer update moves `current`. The plugin requires an exact product, release, and protocol match during its version handshake. It returns a structured tool error on mismatch or transport failure. It never calls built-in Bash as a fallback.
+The plugin resolves that selection to one physical release path for the
+lifetime of the OpenCode process. This prevents a loaded plugin from switching
+to a different binary when an installer update moves `current`. The plugin
+requires the exact product `managed-bash`, the same release version as the
+plugin, and protocol version `1` during its handshake. It returns a structured
+tool error on a product, release, protocol, or transport mismatch. It never
+calls built-in Bash as a fallback.
+
+The supported host pairing is OpenCode `1.18.x` with the plugin API dependency
+`@opencode-ai/plugin` `1.18.4`, the npm plugin version from `VERSION`, and the
+native archive built from the same `VERSION`. Do not pair releases from
+different versions.
 
 The standalone skill has a separate selection boundary:
 
@@ -154,7 +282,8 @@ OpenCode can hide its built-in Bash tool while the plugin retains command permis
 ## Go runner security model
 
 - OpenCode supplies the session ID, physical workspace path, and working directory. Model arguments cannot override them.
-- Stateful requests must match the host-owned context. Cross-workspace reads look like missing jobs, and only the owner session can mutate a job.
+- Stateful requests must match the host-owned context. Cross-workspace reads look like missing jobs. Control and removal mutations require the owner session; a read-authorized same-workspace observer may persist only its own wait cursor.
+- Private workspace files, descriptor-relative access, and ownership checks prevent accidental crossover and unsafe filesystem substitution, but they are not a security boundary against another process running as the same operating-system user.
 - The runner removes trusted host variables before it starts the requested shell command.
 - The installer rejects symlink-substituted path components, shared writable destinations, foreign CLI registrations, and foreign paths at the legacy auto-discovery location.
 - Install, update, and uninstall share one per-user lock. Release publication and the `current` switch use no-replace or atomic rename operations.
@@ -171,13 +300,47 @@ OpenCode can hide its built-in Bash tool while the plugin retains command permis
 
 `hard_timeout_ms` and `output_limit_bytes` configure `run`. `timeout_ms` and `idle_timeout_ms` configure the observational `wait`; neither wait timeout terminates the job.
 
-Protocol v1 has no restart reattachment. Preserved state does not make a running job reattachable after the runner or host restarts. The package command itself builds local archives only; GitHub workflows orchestrate verification and private release publication around those outputs. The installer supports per-user Linux and macOS installs, not privileged system-wide installs.
+Protocol v1 has no restart reattachment. Preserved state does not make a
+running job reattachable after the runner or host restarts. The
+`release-package` target builds local archives only. The GitHub workflow
+verifies, checksums, attests, and publishes those exact bytes without
+rebuilding or repacking them. The installer supports per-user Linux and macOS
+installs, not privileged system-wide installs.
 
-## Continuous integration and private releases
+## Continuous integration and public releases
 
-Pull requests targeting `master` and pushes to `master` run the complete repository verification gate on Linux amd64 with a read-only token. Fork pull requests receive no release credentials. Obsolete runs for the same pull request or ref are cancelled to limit Actions usage.
+Pull requests targeting `master` and pushes to `master` run `Verify
+<target>` on Linux amd64 and arm64, and macOS Intel and ARM64. The required
+`Verification gate` fails unless all four matrix jobs succeed. The workflow
+has read-only repository permissions and cancels obsolete runs for the same
+pull request or ref.
 
-A newly created trusted `vMAJOR.MINOR.PATCH` tag starts release verification only when the version matches `VERSION`, the tagged commit is on `master`, and GitHub associates it with a merged pull request to this repository. The tagged commit then runs the full native gate on Linux amd64/arm64 and macOS Intel/ARM64. Each native job supplies its matching verified archive as a three-day workflow artifact; a final job combines the four archives, creates `SHA256SUMS`, rechecks the tag, and publishes those exact files as a private GitHub Release without rebuilding them. Moved and deleted tag events do not enter the release DAG; repository-level immutable-release and tag policies remain part of the public-release hardening in issue #11.
+A newly created `vMAJOR.MINOR.PATCH` tag starts release verification only when
+the version matches `VERSION`, the tagged commit is on `master`, and GitHub
+associates it with a merged pull request. Producer jobs verify the four native
+archives, the bootstrap, and the npm tarball. Separate jobs validate five
+SPDX 2.3 SBOMs, assemble `SHA256SUMS`, and bind the candidate to its receipts.
+The publication jobs consume those exact candidate bytes. They do not build or
+repack a release.
+
+The first publish uses the protected `release` environment twice. The first
+approval stages the npm package and GitHub draft with provenance and SBOM
+attestations. The second approval finalizes the immutable GitHub Release. If
+npm cannot configure the trusted publisher before the package exists, the
+release operator supplies a temporary bootstrap version and token. The
+workflow passes those credentials only to the child process running the exact
+npm publish command. After staging, the release operator verifies npm SRI and
+provenance, configures and reads back the GitHub Actions trusted publisher,
+revokes and deletes the temporary token, secret, and version variable, then
+approves finalization. OIDC is configured and read back during that transition.
+Unless npm allowed preconfiguration, token-free OIDC publication is
+operationally proven on the next version.
+
+If publication needs recovery, the workflow accepts the original run ID and
+the immutable tag. It checks the tagged commit, release workflow blob, and the
+original candidate and control receipt before reusing the artifacts. Recovery
+does not rebuild, repack, or continue from a draft without the original
+receipts.
 
 Reproduce release bytes locally from the tagged commit with:
 
@@ -185,7 +348,7 @@ Reproduce release bytes locally from the tagged commit with:
 SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD) make release-package
 ```
 
-Validate the checked-in workflow contract with `make workflow-test`. On GitHub Free, a private repository owned by an account without a valid payment method stops running jobs when the included Actions quota is exhausted, so no paid overage or separate budget mutation is possible. The private setup conserves that quota by keeping routine pull-request and `master` verification on Linux amd64 and running the full four-platform matrix only for release tags. After the repository becomes public, issue #11 expands regular CI to the full supported matrix and adds required checks plus public token-free distribution.
+Validate the checked-in workflow contract with `make workflow-test`.
 
 ## Troubleshooting
 
@@ -214,11 +377,15 @@ Validate the checked-in workflow contract with `make workflow-test`. On GitHub F
 | `make cli-build` | Build `bin/managed-bash`. |
 | `make cli-acceptance` | Build and exercise the real binary through help, version, lifecycle, malformed, and incompatible-version scenarios. |
 | `make portable-skill-test` | Exercise CLI-before-tmux selection, tmux lifecycle and diagnostics, reduced-semantics errors, and real CLI/tmux conformance fixtures. |
+| `make npm-package` | Build the versioned OpenCode plugin tarball from the bundled plugin and canonical `VERSION`. |
+| `make npm-package-test` | Validate the npm file set, manifest, release identity, import surface, and failed-pack preservation. |
+| `make opencode-plugin-config-test` | Load one explicit local plugin URL through OpenCode 1.18.x and validate the resolved config. |
 | `SOURCE_DATE_EPOCH=<unix-seconds> make release-package` | Build and verify reproducible Linux/Darwin amd64/arm64 release archives under `dist/`. |
 | `SOURCE_DATE_EPOCH=<unix-seconds> make release-package-test` | Prove strict archive rejection, four-target byte reproducibility, normalized metadata, transactional install/uninstall, and native extracted and installed CLI acceptance. |
+| `SOURCE_DATE_EPOCH=<unix-seconds> make public-install-test` | Exercise the bootstrap against a bounded loopback release fixture, including checksum, host, archive safety, interruption, and current-state preservation failures. |
 | `SOURCE_DATE_EPOCH=<unix-seconds> make installed-opencode-e2e` | Install the native archive into temporary HOME/XDG paths and drive OpenCode 1.18.x through checkpoint, parallel control, cancellation, hard-timeout, cursor, permission-denial, completion, and no-fallback scenarios. |
 | `SOURCE_DATE_EPOCH=<unix-seconds> make e2e-test` | Run release package tests and the installed OpenCode E2E. |
-| `SOURCE_DATE_EPOCH=<unix-seconds> make verify` | Run every repository schema, runner, CLI, plugin, package, installer, and installed E2E gate in sequence. |
+| `SOURCE_DATE_EPOCH=<unix-seconds> make verify` | Run the aggregate schema, runner, CLI, plugin, workflow, archive, installer, and installed E2E gate used by CI. |
 | `make go-check` | Run all Go tests with the race detector, then vet and build every package. |
 
 Run the doctor failure contract with:

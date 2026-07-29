@@ -15,7 +15,7 @@ import (
 
 func Test_Manager_cancel_is_persisted_polled_and_idempotent(t *testing.T) {
 	// Given
-	workspace := t.TempDir()
+	workspace := runner.NewTestWorkspace(t)
 	manager := newControlManager(t)
 	owner := trustedInvocationFor(t, "owner", workspace)
 	job := startControlJob(t, manager, owner, "trap '' TERM; exec sleep 10")
@@ -43,7 +43,7 @@ func Test_Manager_cancel_is_persisted_polled_and_idempotent(t *testing.T) {
 
 func Test_Manager_cancel_terminal_job_is_noop(t *testing.T) {
 	// Given
-	workspace := t.TempDir()
+	workspace := runner.NewTestWorkspace(t)
 	manager := newControlManager(t)
 	owner := trustedInvocationFor(t, "owner", workspace)
 	job := startControlJob(t, manager, owner, "printf done")
@@ -62,7 +62,7 @@ func Test_Manager_cancel_terminal_job_is_noop(t *testing.T) {
 
 func Test_Manager_cancel_rejects_non_owner(t *testing.T) {
 	// Given
-	workspace := t.TempDir()
+	workspace := runner.NewTestWorkspace(t)
 	manager := newControlManager(t)
 	owner := trustedInvocationFor(t, "owner", workspace)
 	other := trustedInvocationFor(t, "other", workspace)

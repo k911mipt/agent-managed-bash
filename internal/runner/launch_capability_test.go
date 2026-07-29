@@ -16,7 +16,7 @@ import (
 )
 
 func Test_OpenStoreAt_uses_workspace_descriptor_after_path_replacement(t *testing.T) {
-	base := t.TempDir()
+	base := testWorkspace(t)
 	workspace := filepath.Join(base, "workspace")
 	moved := filepath.Join(base, "moved")
 	replacement := filepath.Join(base, "replacement")
@@ -42,7 +42,7 @@ func Test_OpenStoreAt_uses_workspace_descriptor_after_path_replacement(t *testin
 }
 
 func Test_Manager_executes_from_cwd_descriptor_after_path_replacement(t *testing.T) {
-	workspace := t.TempDir()
+	workspace := testWorkspace(t)
 	cwd := filepath.Join(workspace, "cwd")
 	moved := filepath.Join(workspace, "moved")
 	require.NoError(t, os.Mkdir(cwd, 0o700))
@@ -79,7 +79,7 @@ func Test_Manager_executes_from_cwd_descriptor_after_path_replacement(t *testing
 }
 
 func Test_Manager_publishes_to_workspace_descriptor_after_path_replacement(t *testing.T) {
-	base := t.TempDir()
+	base := testWorkspace(t)
 	workspace := filepath.Join(base, "workspace")
 	moved := filepath.Join(base, "moved")
 	replacement := filepath.Join(base, "replacement")

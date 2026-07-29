@@ -20,7 +20,7 @@ import (
 
 func Test_Manager_detached_runner_completes_after_caller_process_exits(t *testing.T) {
 	// Given
-	workspace := t.TempDir()
+	workspace := runner.NewTestWorkspace(t)
 	releasePath := filepath.Join(workspace, "release")
 	metadataPath := filepath.Join(workspace, "job.json")
 	executable, err := os.Executable()

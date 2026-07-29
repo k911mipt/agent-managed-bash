@@ -17,7 +17,7 @@ import (
 )
 
 func Test_Manager_runtime_identifies_live_unreaped_guardian_as_process_group_leader(t *testing.T) {
-	workspace := t.TempDir()
+	workspace := runner.NewTestWorkspace(t)
 	manager := newControlManager(t)
 	owner := trustedInvocationFor(t, "owner", workspace)
 	job := startControlJob(t, manager, owner, `trap '' TERM; exec sleep 10`)
@@ -41,7 +41,7 @@ func Test_Manager_runtime_identifies_live_unreaped_guardian_as_process_group_lea
 }
 
 func Test_Manager_runner_death_triggers_guardian_cleanup_without_observer_signal(t *testing.T) {
-	workspace := t.TempDir()
+	workspace := runner.NewTestWorkspace(t)
 	pidPath := filepath.Join(workspace, "descendant-pid")
 	manager := newControlManager(t)
 	owner := trustedInvocationFor(t, "owner", workspace)

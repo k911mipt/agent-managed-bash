@@ -13,7 +13,7 @@ import (
 
 func Test_Manager_observation_and_control_authorization(t *testing.T) {
 	// Given
-	workspace := t.TempDir()
+	workspace := runner.NewTestWorkspace(t)
 	manager := newControlManager(t)
 	owner := trustedInvocationFor(t, "owner", workspace)
 	observer := trustedInvocationFor(t, "observer", workspace)
@@ -30,7 +30,16 @@ func Test_Manager_observation_and_control_authorization(t *testing.T) {
 	})
 	listed, listErr := manager.List(context.Background(), runner.ListRequest{Invocation: observer})
 	_, nonOwnerRemoveErr := manager.Remove(context.Background(), runner.RemoveRequest{Invocation: observer, JobID: job.JobID})
-	removed, removeErr := manager.Remove(context.Background(), runner.RemoveRequest{Invocation: owner, JobID: job.JobID})
+	var removed generated.RemoveResult
+	var removeErr error
+	controlWaitForCondition(t, testLifecycleDeadline, func() bool {
+		removed, removeErr = manager.Remove(context.Background(), runner.RemoveRequest{Invocation: owner, JobID: job.JobID})
+		if removeErr == nil {
+			return true
+		}
+		require.ErrorIs(t, removeErr, runner.ErrRunnerActive)
+		return false
+	})
 
 	// Then
 	require.NoError(t, statusErr)
@@ -47,8 +56,8 @@ func Test_Manager_observation_and_control_authorization(t *testing.T) {
 func Test_Manager_cross_workspace_read_is_masked_as_not_found(t *testing.T) {
 	// Given
 	manager := newControlManager(t)
-	ownerWorkspace := t.TempDir()
-	otherWorkspace := t.TempDir()
+	ownerWorkspace := runner.NewTestWorkspace(t)
+	otherWorkspace := runner.NewTestWorkspace(t)
 	owner := trustedInvocationFor(t, "owner", ownerWorkspace)
 	other := trustedInvocationFor(t, "other", otherWorkspace)
 	job := startControlJob(t, manager, owner, "printf ok")

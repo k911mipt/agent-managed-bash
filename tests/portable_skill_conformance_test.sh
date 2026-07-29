@@ -8,6 +8,7 @@ dispatcher="$root/.opencode/skills/managed-bash/scripts/managed-bash"
 fixture="$root/fixtures/v1/portable-skill/scenarios.json"
 command -v tmux >/dev/null 2>&1 || { printf '%s\n' 'portable skill conformance requires tmux on PATH' >&2; exit 1; }
 stage=$(mktemp -d)
+stage=$(CDPATH= cd -- "$stage" && pwd -P)
 socket="managed-bash-conformance-$$"
 trap 'tmux -L "$socket" kill-server >/dev/null 2>&1 || true; rm -rf "$stage"' EXIT HUP INT TERM
 

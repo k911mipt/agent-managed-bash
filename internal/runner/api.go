@@ -38,6 +38,7 @@ type Manager struct {
 	beforeCommit            func()
 	afterCommit             func()
 	beforeOutputRead        func()
+	beforeWaitOutput        func()
 	afterListEntries        func()
 	afterCapabilitiesOpened func()
 }
