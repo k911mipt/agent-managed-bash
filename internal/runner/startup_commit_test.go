@@ -95,6 +95,14 @@ func Test_Manager_returns_committed_job_when_context_is_canceled_after_commit(t 
 	observation, statusErr := manager.Status(context.Background(), StatusRequest{Invocation: owner, JobID: job.JobID})
 	require.NoError(t, statusErr)
 	require.Equal(t, job.JobID, observation.Job.JobID)
+	waitForCondition(t, time.Second, func() bool {
+		_, removeErr := manager.Remove(context.Background(), RemoveRequest{Invocation: owner, JobID: job.JobID})
+		if errors.Is(removeErr, ErrActiveJob) || errors.Is(removeErr, ErrRunnerActive) {
+			return false
+		}
+		require.NoError(t, removeErr)
+		return true
+	})
 }
 
 func Test_PendingJob_returns_lease_when_parent_sync_fails_after_publication(t *testing.T) {
