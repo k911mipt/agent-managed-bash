@@ -54,6 +54,9 @@ jobs:
         run: printf '%s\n' "$GITHUB_WORKSPACE/node_modules/.bin" >> "$GITHUB_PATH"
       - name: Check OpenCode
         run: test "$(opencode --version)" = "1.18.4"
+      - name: Install tmux on macOS
+        if: runner.os == 'macOS'
+        run: brew install tmux
       - name: Run complete verification
         run: SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)" make verify
 

@@ -12,14 +12,15 @@ func Test_ReleaseWorkflow_creates_a_receipted_scanner_isolated_candidate(t *test
 	workflow := loadWorkflow(t, "release.yml")
 
 	// When
-	verification := job(t, workflow, "verify")
+	producer := job(t, workflow, "produce")
 	scanner := job(t, workflow, "sbom")
 	prepare := job(t, workflow, "prepare")
 	control := job(t, workflow, "control")
 
 	// Then
-	producerCommand := scalarValue(t, stepByName(t, verification, "Create release producer receipts"), "run")
-	require.Contains(t, producerCommand, "make verify")
+	producerCommand := scalarValue(t, stepByName(t, producer, "Create release producer receipts"), "run")
+	require.Contains(t, producerCommand, "make release-package")
+	require.NotContains(t, producerCommand, "make verify")
 	require.Contains(t, producerCommand, "release-candidate.ts producer")
 	require.Equal(t, "false", scalarValue(t, mappingValue(t, stepByName(t, scanner, "Check out source"), "with"), "persist-credentials"))
 	require.Equal(t, "anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610", scalarValue(t, stepByName(t, scanner, "Generate SPDX SBOM"), "uses"))

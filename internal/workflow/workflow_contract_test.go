@@ -46,6 +46,9 @@ func Test_CIWorkflow_runs_read_only_full_verification_on_pull_requests_and_maste
 	require.Equal(t, "false", scalarValue(t, mappingValue(t, stepByName(t, verification, "Check out source"), "with"), "persist-credentials"))
 	require.Equal(t, "1.26.5", scalarValue(t, mappingValue(t, stepByName(t, verification, "Set up Go"), "with"), "go-version"))
 	require.Equal(t, "1.3.14", scalarValue(t, mappingValue(t, stepByName(t, verification, "Set up Bun"), "with"), "bun-version"))
+	installTmux := stepByName(t, verification, "Install tmux on macOS")
+	require.Equal(t, "runner.os == 'macOS'", scalarValue(t, installTmux, "if"))
+	require.Equal(t, "brew install tmux", scalarValue(t, installTmux, "run"))
 	require.Contains(t, scalarValue(t, stepByName(t, verification, "Expose local tools"), "run"), "node_modules/.bin")
 	openCodeCheck := scalarValue(t, stepByName(t, verification, "Check OpenCode"), "run")
 	require.Equal(t, `test "$(opencode --version)" = "1.18.4"`, openCodeCheck)
@@ -61,6 +64,7 @@ func Test_ReleaseWorkflow_validates_reviewed_tag_and_verifies_all_native_targets
 	triggers := mappingValue(t, workflow, "on")
 	validation := job(t, workflow, "validate")
 	verification := job(t, workflow, "verify")
+	producer := job(t, workflow, "produce")
 
 	// Then
 	require.Equal(t, []string{"v*"}, sequenceValues(t, mappingValue(t, mappingValue(t, triggers, "push"), "tags")))
@@ -85,17 +89,50 @@ func Test_ReleaseWorkflow_validates_reviewed_tag_and_verifies_all_native_targets
 	require.Equal(t, "false", scalarValue(t, mappingValue(t, stepByName(t, verification, "Check out source"), "with"), "persist-credentials"))
 	require.Equal(t, "1.26.5", scalarValue(t, mappingValue(t, stepByName(t, verification, "Set up Go"), "with"), "go-version"))
 	require.Equal(t, "1.3.14", scalarValue(t, mappingValue(t, stepByName(t, verification, "Set up Bun"), "with"), "bun-version"))
+	installTmux := stepByName(t, verification, "Install tmux on macOS")
+	require.Equal(t, "runner.os == 'macOS'", scalarValue(t, installTmux, "if"))
+	require.Equal(t, "brew install tmux", scalarValue(t, installTmux, "run"))
 	require.Contains(t, scalarValue(t, stepByName(t, verification, "Expose local tools"), "run"), "node_modules/.bin")
 	openCodeCheck := scalarValue(t, stepByName(t, verification, "Check OpenCode"), "run")
 	require.Equal(t, `test "$(opencode --version)" = "1.18.4"`, openCodeCheck)
 	require.NotContains(t, openCodeCheck, "install --global")
 	require.Equal(t, "make verify", scalarValue(t, stepByName(t, verification, "Run complete verification"), "run"))
+	for _, step := range mappingValue(t, verification, "steps").Content {
+		if uses, ok := mappingValueIfPresent(step, "uses"); ok {
+			require.NotEqual(t, uploadAction, uses.Value)
+		}
+	}
+	require.Equal(t, []string{"validate", "verify"}, scalarOrSequenceValues(t, mappingValue(t, producer, "needs")))
+	producerInclude := mappingValue(t, mappingValue(t, mappingValue(t, producer, "strategy"), "matrix"), "include")
+	require.Len(t, producerInclude.Content, 4)
+	producerTargets := make([]string, 0, 4)
+	producerRunners := make([]string, 0, 4)
+	for _, entry := range producerInclude.Content {
+		producerTargets = append(producerTargets, scalarValue(t, entry, "target"))
+		producerRunners = append(producerRunners, scalarValue(t, entry, "runner"))
+	}
+	require.ElementsMatch(t, []string{"linux-amd64", "linux-arm64", "darwin-amd64", "darwin-arm64"}, producerTargets)
+	require.ElementsMatch(t, []string{"ubuntu-24.04", "ubuntu-24.04-arm", "macos-15-intel", "macos-15"}, producerRunners)
+	producerReceipt := scalarValue(t, stepByName(t, producer, "Create release producer receipts"), "run")
+	require.Contains(t, producerReceipt, "make release-package")
+	require.NotContains(t, producerReceipt, "make verify")
+	require.Contains(t, producerReceipt, `cp "dist/npm/$npm_asset" "dist/$npm_asset"`)
+	for _, step := range mappingValue(t, producer, "steps").Content {
+		if name, ok := mappingValueIfPresent(step, "name"); ok {
+			require.NotEqual(t, "Install tmux on macOS", name.Value)
+		}
+	}
+	scanner := job(t, workflow, "sbom")
+	prepare := job(t, workflow, "prepare")
+	require.Equal(t, []string{"validate", "produce"}, scalarOrSequenceValues(t, mappingValue(t, scanner, "needs")))
+	require.Equal(t, []string{"validate", "produce", "sbom"}, scalarOrSequenceValues(t, mappingValue(t, prepare, "needs")))
 }
 
 func Test_ReleaseWorkflow_creates_candidate_artifacts_without_external_publication(t *testing.T) {
 	// Given
 	workflow := loadWorkflow(t, "release.yml")
 	verification := job(t, workflow, "verify")
+	producer := job(t, workflow, "produce")
 	prepare := job(t, workflow, "prepare")
 	control := job(t, workflow, "control")
 
@@ -117,6 +154,15 @@ func Test_ReleaseWorkflow_creates_candidate_artifacts_without_external_publicati
 				require.NotContains(t, run.Value, "gh release")
 				require.NotContains(t, run.Value, "npm publish")
 			}
+		}
+	}
+	for _, step := range mappingValue(t, producer, "steps").Content {
+		if uses, ok := mappingValueIfPresent(step, "uses"); ok {
+			require.NotContains(t, uses.Value, "actions/attest")
+		}
+		if run, ok := mappingValueIfPresent(step, "run"); ok {
+			require.NotContains(t, run.Value, "gh release")
+			require.NotContains(t, run.Value, "npm publish")
 		}
 	}
 }
