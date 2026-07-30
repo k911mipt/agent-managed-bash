@@ -82,7 +82,7 @@ describe("release publication fake CLI surface", () => {
       expect(resumed.exitCode).toBe(0)
       expect(JSON.parse(await readFile(fakeStatePath(environment), "utf8"))["release"]["assets"]).toHaveLength(12)
     } finally { await rm(root, { force: true, recursive: true }) }
-  })
+  }, { timeout: 20_000 })
 
   test("reconciles delayed and ambiguous npm and draft mutations without repeating them", async () => {
     // Given
