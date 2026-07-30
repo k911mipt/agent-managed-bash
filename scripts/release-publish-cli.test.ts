@@ -265,10 +265,10 @@ describe("release publication fake CLI surface", () => {
     try {
       const result = await runPublication(arguments_, { ...environment, NPM_BOOTSTRAP_VERSION: fixtureVersion, NPM_TOKEN: "bootstrap-token", RELEASE_FIRST_PUBLISH_BOOTSTRAP: "true" })
       const children = await Promise.all((await readdir(root)).filter((name) => name.startsWith("state.json.child-")).map(async (name) => JSON.parse(await readFile(join(root, name), "utf8"))))
-      const tokenChildren = children.filter((child: { readonly hasNpmToken: boolean }) => child.hasNpmToken)
+      const tokenChildren = children.filter((child: { readonly hasNodeAuthToken: boolean }) => child.hasNodeAuthToken)
 
       expect(result.exitCode).toBe(0)
-      expect(tokenChildren).toEqual([{ arguments_: ["publish", expect.stringMatching(/\.tgz$/), "--access", "public", "--provenance"], hasNpmToken: true, kind: "npm" }])
+      expect(tokenChildren).toEqual([{ arguments_: ["publish", expect.stringMatching(/\.tgz$/), "--access", "public", "--provenance"], hasNodeAuthToken: true, kind: "npm" }])
       expect(children.every((child: { readonly arguments_: readonly string[] }) => child.arguments_.every((argument) => argument !== "bootstrap-token"))).toBeTrue()
       expect(JSON.stringify(children)).not.toContain("bootstrap-token")
     } finally { await rm(root, { force: true, recursive: true }) }
