@@ -16,8 +16,10 @@ export function fakeStatePath(environment: Readonly<Record<string, string>>): st
   return path
 }
 
-export async function runPublication(arguments_: readonly string[], environment: Readonly<Record<string, string>>): Promise<ProcessResult> {
-  const child = Bun.spawn({ cmd: [process.execPath, publishPath, ...arguments_], env: { ...process.env, ...environment }, stderr: "pipe", stdout: "pipe" })
+export async function runPublication(arguments_: readonly string[], environment: Readonly<Record<string, string>>, cwd?: string): Promise<ProcessResult> {
+  const child = cwd === undefined
+    ? Bun.spawn({ cmd: [process.execPath, publishPath, ...arguments_], env: { ...process.env, ...environment }, stderr: "pipe", stdout: "pipe" })
+    : Bun.spawn({ cmd: [process.execPath, publishPath, ...arguments_], cwd, env: { ...process.env, ...environment }, stderr: "pipe", stdout: "pipe" })
   if (typeof child.stderr === "number" || typeof child.stdout === "number" || child.stderr === undefined || child.stdout === undefined) throw new Error("publication test child output is not piped")
   const [exitCode, stderr, stdout] = await Promise.all([child.exited, new Response(child.stderr).text(), new Response(child.stdout).text()])
   return { exitCode, stderr, stdout }

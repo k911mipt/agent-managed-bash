@@ -260,15 +260,15 @@ describe("release publication fake CLI surface", () => {
   test("uses an exact bootstrap token only for the absent-package publish child", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-managed-bash-release-bootstrap-"))
     const environment = await setupPublication(root)
-    const arguments_ = ["stage", "--candidate", join(root, "candidate"), "--control", join(root, "control", "CANDIDATE-RECEIPT.json")]
+    const arguments_ = ["stage", "--candidate", "candidate", "--control", join("control", "CANDIDATE-RECEIPT.json")]
 
     try {
-      const result = await runPublication(arguments_, { ...environment, NPM_BOOTSTRAP_VERSION: fixtureVersion, NPM_TOKEN: "bootstrap-token", RELEASE_FIRST_PUBLISH_BOOTSTRAP: "true" })
+      const result = await runPublication(arguments_, { ...environment, NPM_BOOTSTRAP_VERSION: fixtureVersion, NPM_TOKEN: "bootstrap-token", RELEASE_FIRST_PUBLISH_BOOTSTRAP: "true" }, root)
       const children = await Promise.all((await readdir(root)).filter((name) => name.startsWith("state.json.child-")).map(async (name) => JSON.parse(await readFile(join(root, name), "utf8"))))
       const tokenChildren = children.filter((child: { readonly hasNodeAuthToken: boolean }) => child.hasNodeAuthToken)
 
       expect(result.exitCode).toBe(0)
-      expect(tokenChildren).toEqual([{ arguments_: ["publish", expect.stringMatching(/\.tgz$/), "--access", "public", "--provenance"], hasNodeAuthToken: true, kind: "npm" }])
+      expect(tokenChildren).toEqual([{ arguments_: ["publish", expect.stringMatching(/^\/.*\.tgz$/), "--access", "public", "--provenance"], hasNodeAuthToken: true, kind: "npm" }])
       expect(children.every((child: { readonly arguments_: readonly string[] }) => child.arguments_.every((argument) => argument !== "bootstrap-token"))).toBeTrue()
       expect(JSON.stringify(children)).not.toContain("bootstrap-token")
     } finally { await rm(root, { force: true, recursive: true }) }
