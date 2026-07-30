@@ -70,33 +70,27 @@ export async function readCommand(executable: string, arguments_: readonly strin
 }
 
 export async function mutateThenRead(executable: string, arguments_: readonly string[], read: () => Promise<void>, environment_: Readonly<Record<string, string>> = {}): Promise<void> {
-  const attempts = Number(process.env["RELEASE_READ_ATTEMPTS"] ?? "3")
+  const attempts = Number(process.env["RELEASE_READ_ATTEMPTS"] ?? "4")
   if (!Number.isSafeInteger(attempts) || attempts < 1 || attempts > 10) throw new ReleasePublicationError("invalid release read attempts")
+  const delayMilliseconds = Number(process.env["RELEASE_READ_DELAY_MS"] ?? "0")
+  if (!Number.isSafeInteger(delayMilliseconds) || delayMilliseconds < 0 || delayMilliseconds > 60_000) throw new ReleasePublicationError("invalid release read delay")
   const reconcile = async (): Promise<void> => {
     let failure: unknown = undefined
     for (let index = 0; index < attempts; index += 1) {
-      try {
-        await read()
-        return
-      } catch (error) {
-        failure = error
-      }
+      const outcome = await read().then(() => ({ success: true } as const), (error: unknown) => ({ error, success: false } as const))
+      if (outcome.success) return
+      failure = outcome.error
+      if (index + 1 < attempts && delayMilliseconds > 0) await Bun.sleep(delayMilliseconds)
     }
     throw failure
   }
-  try {
-    const result = await command(executable, arguments_, environment_)
-    if (result.exitCode !== 0) {
-      const stderr = Object.values(environment_).reduce((output, value) => value.length === 0 ? output : output.replaceAll(value, "***"), result.stderr.trim())
-      throw new ReleasePublicationError(`mutation command failed: ${executable}${stderr.length === 0 ? "" : `\n${stderr}`}`)
-    }
-  } catch (error) {
-    try {
-      await reconcile()
-      return
-    } catch {
-      throw error
-    }
+  const mutation = await command(executable, arguments_, environment_).then((result) => ({ result, success: true } as const), (error: unknown) => ({ error, success: false } as const))
+  if (mutation.success && mutation.result.exitCode === 0) {
+    await reconcile()
+    return
   }
-  await reconcile()
+  const error = mutation.success
+    ? new ReleasePublicationError(`mutation command failed: ${executable}${mutation.result.stderr.trim().length === 0 ? "" : `\n${Object.values(environment_).reduce((output, value) => value.length === 0 ? output : output.replaceAll(value, "***"), mutation.result.stderr.trim())}`}`)
+    : mutation.error
+  await reconcile().then(() => undefined, () => { throw error })
 }

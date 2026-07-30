@@ -88,7 +88,7 @@ describe("release publication fake CLI surface", () => {
     // Given
     const root = await mkdtemp(join(tmpdir(), "agent-managed-bash-release-ambiguous-"))
     const environment = await setupPublication(root)
-    await writeFile(fakeStatePath(environment), JSON.stringify({ ambiguous: "npm-publish", npmDelayOnPublish: 1, releaseDelayOnCreate: 1 }))
+    await writeFile(fakeStatePath(environment), JSON.stringify({ ambiguous: "npm-publish", npmDelayOnPublish: 3, releaseDelayOnCreate: 1 }))
     const arguments_ = ["stage", "--candidate", join(root, "candidate"), "--control", join(root, "control", "CANDIDATE-RECEIPT.json")]
 
     try {
