@@ -86,16 +86,20 @@ func Test_ReleaseWorkflow_fresh_guard_fails_closed_on_non_absence(t *testing.T) 
 func Test_ReleaseWorkflow_pins_npm_for_all_publication_reads(t *testing.T) {
 	// Given
 	workflow := loadWorkflow(t, "release.yml")
+	toolchain := mappingValue(t, workflow, "env")
 
 	// When
 	jobs := []string{"fresh-guard", "stage-release", "finalize-release"}
 
 	// Then
+	require.Equal(t, "24.18.0", scalarValue(t, toolchain, "NODE_VERSION"))
+	require.Equal(t, "11.5.1", scalarValue(t, toolchain, "NPM_VERSION"))
 	for _, name := range jobs {
 		jobNode := job(t, workflow, name)
 		setup := stepByName(t, jobNode, "Set up Node")
 		require.Equal(t, setupNodeAction, scalarValue(t, setup, "uses"))
-		require.Equal(t, "24.18.0", scalarValue(t, mappingValue(t, setup, "with"), "node-version"))
-		require.Equal(t, `test "$(npm --version)" = "11.5.1"`, scalarValue(t, stepByName(t, jobNode, "Check pinned npm"), "run"))
+		require.Equal(t, "${{ env.NODE_VERSION }}", scalarValue(t, mappingValue(t, setup, "with"), "node-version"))
+		require.Equal(t, `npm install --global "npm@$NPM_VERSION"`, scalarValue(t, stepByName(t, jobNode, "Install pinned npm"), "run"))
+		require.Equal(t, `test "$(npm --version)" = "$NPM_VERSION"`, scalarValue(t, stepByName(t, jobNode, "Check pinned npm"), "run"))
 	}
 }

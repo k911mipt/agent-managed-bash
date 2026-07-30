@@ -87,14 +87,14 @@ func Test_ReleaseWorkflow_validates_reviewed_tag_and_verifies_all_native_targets
 	}
 	require.ElementsMatch(t, []string{"ubuntu-24.04", "ubuntu-24.04-arm", "macos-15-intel", "macos-15"}, runners)
 	require.Equal(t, "false", scalarValue(t, mappingValue(t, stepByName(t, verification, "Check out source"), "with"), "persist-credentials"))
-	require.Equal(t, "1.26.5", scalarValue(t, mappingValue(t, stepByName(t, verification, "Set up Go"), "with"), "go-version"))
-	require.Equal(t, "1.3.14", scalarValue(t, mappingValue(t, stepByName(t, verification, "Set up Bun"), "with"), "bun-version"))
+	require.Equal(t, "go.mod", scalarValue(t, mappingValue(t, stepByName(t, verification, "Set up Go"), "with"), "go-version-file"))
+	require.Equal(t, ".bun-version", scalarValue(t, mappingValue(t, stepByName(t, verification, "Set up Bun"), "with"), "bun-version-file"))
 	installTmux := stepByName(t, verification, "Install tmux on macOS")
 	require.Equal(t, "runner.os == 'macOS'", scalarValue(t, installTmux, "if"))
 	require.Equal(t, "brew install tmux", scalarValue(t, installTmux, "run"))
 	require.Contains(t, scalarValue(t, stepByName(t, verification, "Expose local tools"), "run"), "node_modules/.bin")
 	openCodeCheck := scalarValue(t, stepByName(t, verification, "Check OpenCode"), "run")
-	require.Equal(t, `test "$(opencode --version)" = "1.18.4"`, openCodeCheck)
+	require.Contains(t, openCodeCheck, `.devDependencies["opencode-ai"]`)
 	require.NotContains(t, openCodeCheck, "install --global")
 	require.Equal(t, "make verify", scalarValue(t, stepByName(t, verification, "Run complete verification"), "run"))
 	for _, step := range mappingValue(t, verification, "steps").Content {
