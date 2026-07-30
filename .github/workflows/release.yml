@@ -21,7 +21,6 @@ permissions:
 env:
   NODE_VERSION: 24.18.0
   NPM_VERSION: 11.5.1
-  RELEASE_READ_DELAY_MS: 20000
   SYFT_VERSION: v1.49.0
 
 concurrency:
@@ -550,6 +549,7 @@ jobs:
       terminal: ${{ steps.publication.outputs.terminal }}
     env:
       RELEASE_COMMIT: ${{ github.event_name == 'workflow_dispatch' && needs.recovery.outputs.commit || needs.validate.outputs.commit }}
+      RELEASE_READ_DELAY_MS: 20000
       RELEASE_REPOSITORY: ${{ github.repository }}
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || needs.validate.outputs.tag }}
       RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && needs.recovery.outputs.version || needs.validate.outputs.version }}
@@ -659,6 +659,7 @@ jobs:
       contents: write
     env:
       RELEASE_COMMIT: ${{ github.event_name == 'workflow_dispatch' && needs.recovery.outputs.commit || needs.validate.outputs.commit }}
+      RELEASE_READ_DELAY_MS: 20000
       RELEASE_REPOSITORY: ${{ github.repository }}
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || needs.validate.outputs.tag }}
       RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && needs.recovery.outputs.version || needs.validate.outputs.version }}

@@ -30,6 +30,21 @@ func Test_ReleaseWorkflow_stages_and_finalizes_through_separate_release_approval
 	}
 }
 
+func Test_ReleaseWorkflow_scopes_read_delay_to_publication_jobs(t *testing.T) {
+	// Given
+	workflow := loadWorkflow(t, "release.yml")
+
+	// When
+	globalEnvironment := mappingValue(t, workflow, "env")
+	_, globallyConfigured := mappingValueIfPresent(globalEnvironment, "RELEASE_READ_DELAY_MS")
+
+	// Then
+	require.False(t, globallyConfigured)
+	for _, name := range []string{"stage-release", "finalize-release"} {
+		require.Equal(t, "20000", scalarValue(t, mappingValue(t, job(t, workflow, name), "env"), "RELEASE_READ_DELAY_MS"))
+	}
+}
+
 func Test_ReleaseWorkflow_recovery_requires_original_artifacts_without_producers(t *testing.T) {
 	// Given
 	workflow := loadWorkflow(t, "release.yml")
