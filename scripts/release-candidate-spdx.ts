@@ -27,7 +27,14 @@ export async function validateSpdxDocument(document: unknown, schemaPath: string
   if (!isRecord(info) || !Array.isArray(info["creators"]) || info["creators"].length === 0 || info["creators"].some((creator) => typeof creator !== "string" || creator.length === 0)) {
     throw new Error("invalid SPDX creators")
   }
-  const described = Array.isArray(document["documentDescribes"]) ? document["documentDescribes"] : []
+  const relationships = Array.isArray(document["relationships"]) ? document["relationships"] : []
+  const described = [
+    ...(Array.isArray(document["documentDescribes"]) ? document["documentDescribes"] : []),
+    ...relationships
+      .filter(isRecord)
+      .filter((relationship) => relationship["spdxElementId"] === "SPDXRef-DOCUMENT" && relationship["relationshipType"] === "DESCRIBES")
+      .map((relationship) => relationship["relatedSpdxElement"]),
+  ]
   const packages = Array.isArray(document["packages"]) ? document["packages"] : []
   const files = Array.isArray(document["files"]) ? document["files"] : []
   if (packages.length + files.length === 0) {
@@ -35,6 +42,11 @@ export async function validateSpdxDocument(document: unknown, schemaPath: string
   }
   const entries = [...packages, ...files].filter(isRecord)
   const ids = new Set([document["SPDXID"], ...entries.map((entry) => entry["SPDXID"]).filter((id): id is string => typeof id === "string")])
+  for (const relationship of relationships) {
+    if (!isRecord(relationship) || !ids.has(requireString(relationship["spdxElementId"], "relationship endpoint")) || !ids.has(requireString(relationship["relatedSpdxElement"], "relationship endpoint"))) {
+      throw new Error("invalid SPDX relationship")
+    }
+  }
   if (!described.every((id) => typeof id === "string" && ids.has(id) && id !== "SPDXRef-DOCUMENT")) {
     throw new Error("described SPDX target must be package or file")
   }
@@ -60,11 +72,6 @@ export async function validateSpdxDocument(document: unknown, schemaPath: string
   })
   if (!meaningful) {
     throw new Error("described SPDX inventory lacks identity")
-  }
-  for (const relationship of Array.isArray(document["relationships"]) ? document["relationships"] : []) {
-    if (!isRecord(relationship) || !ids.has(requireString(relationship["spdxElementId"], "relationship endpoint")) || !ids.has(requireString(relationship["relatedSpdxElement"], "relationship endpoint"))) {
-      throw new Error("invalid SPDX relationship")
-    }
   }
 }
 
