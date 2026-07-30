@@ -9,7 +9,7 @@ describe("release publication fake CLI surface", () => {
   test("stages, resumes, and finalizes exact candidate bytes", async () => {
     // Given
     const root = await mkdtemp(join(tmpdir(), "agent-managed-bash-release-cli-"))
-    const environment = await setupPublication(root)
+    const environment = { ...(await setupPublication(root)), NPM_BOOTSTRAP_VERSION: "", NPM_TOKEN: "", RELEASE_FIRST_PUBLISH_BOOTSTRAP: "" }
     const arguments_ = ["stage", "--candidate", join(root, "candidate"), "--control", join(root, "control", "CANDIDATE-RECEIPT.json")]
 
     try {
