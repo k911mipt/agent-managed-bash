@@ -87,7 +87,7 @@ release-candidate-test:
 	@bun test scripts/release-candidate.receipt.test.ts scripts/release-candidate.spdx.test.ts scripts/release-candidate.assembly.test.ts scripts/release-candidate.control.test.ts scripts/release-candidate.interruption.test.ts
 
 release-publish-test:
-	@bun test scripts/release-publish.test.ts scripts/release-publish-cli.test.ts scripts/release-publish-command.test.ts
+	@bun test scripts/release-publish.test.ts scripts/release-publish-cli.test.ts scripts/release-publish-cli-security.test.ts scripts/release-publish-command.test.ts
 
 public-install-test: release-package
 	@sh tests/public_install_test.sh
