@@ -84,7 +84,7 @@ async function reconcileNpm(candidate: PublicationCandidate, npm: string, bootst
     await mutateThenRead(npm, ["publish", resolve(tarball.path), "--access", "public", "--provenance"], async () => readNpm(candidate, npm, tarball), token === undefined ? {} : { NODE_AUTH_TOKEN: token })
     return
   }
-  if (bootstrapRequested || process.env["NPM_TOKEN"] !== undefined || process.env["NPM_BOOTSTRAP_VERSION"] !== undefined) throw new ReleasePublicationError("stale npm bootstrap credentials")
+  if (bootstrapRequested) throw new ReleasePublicationError("stale npm bootstrap credentials")
   await readNpm(candidate, npm, tarball)
 }
 
@@ -157,10 +157,12 @@ export async function main(arguments_: readonly string[]): Promise<void> {
   if (mode !== "stage" && mode !== "finalize" && mode !== "recovery") {
     throw new ReleasePublicationError("expected guard, stage, finalize, or recovery command")
   }
-  const bootstrapMarker = process.env["RELEASE_FIRST_PUBLISH_BOOTSTRAP"]
-  const bootstrapRequested = bootstrapMarker !== undefined && bootstrapMarker.length !== 0
-  const bootstrapAllowed = mode === "stage" && process.env["RELEASE_FIRST_PUBLISH_BOOTSTRAP"] === "true" && process.env["NPM_TOKEN"] !== undefined && process.env["NPM_BOOTSTRAP_VERSION"] === process.env["RELEASE_VERSION"]
-  if ((process.env["NPM_TOKEN"] !== undefined || process.env["NPM_BOOTSTRAP_VERSION"] !== undefined || bootstrapRequested) && !bootstrapAllowed) {
+  const bootstrapMarker = process.env["RELEASE_FIRST_PUBLISH_BOOTSTRAP"] || undefined
+  const bootstrapToken = process.env["NPM_TOKEN"] || undefined
+  const bootstrapVersion = process.env["NPM_BOOTSTRAP_VERSION"] || undefined
+  const bootstrapRequested = bootstrapMarker !== undefined
+  const bootstrapAllowed = mode === "stage" && bootstrapMarker === "true" && bootstrapToken !== undefined && bootstrapVersion === process.env["RELEASE_VERSION"]
+  if ((bootstrapToken !== undefined || bootstrapVersion !== undefined || bootstrapRequested) && !bootstrapAllowed) {
     throw new ReleasePublicationError("stale npm bootstrap credentials")
   }
   const candidateDirectory = option(arguments_, "--candidate")
