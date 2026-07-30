@@ -21,6 +21,7 @@ permissions:
 env:
   NODE_VERSION: 24.18.0
   NPM_VERSION: 11.5.1
+  RELEASE_READ_DELAY_MS: 20000
   SYFT_VERSION: v1.49.0
 
 concurrency:
