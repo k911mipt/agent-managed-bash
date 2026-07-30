@@ -69,34 +69,40 @@ export async function readCommand(executable: string, arguments_: readonly strin
   return parseStrictJSON(result.stdout)
 }
 
+function redactedCommandOutput(result: ReleaseCommandResult, environment_: Readonly<Record<string, string>>): string {
+  const output = `${result.stdout}\n${result.stderr}`.trim()
+  return Object.values(environment_).reduce((redacted, value) => value.length === 0 ? redacted : redacted.replaceAll(value, "***"), output)
+}
+
 export async function mutateThenRead(executable: string, arguments_: readonly string[], read: () => Promise<void>, environment_: Readonly<Record<string, string>> = {}): Promise<void> {
   const attempts = Number(process.env["RELEASE_READ_ATTEMPTS"] ?? "3")
   if (!Number.isSafeInteger(attempts) || attempts < 1 || attempts > 10) throw new ReleasePublicationError("invalid release read attempts")
   const reconcile = async (): Promise<void> => {
     let failure: unknown = undefined
     for (let index = 0; index < attempts; index += 1) {
-      try {
-        await read()
-        return
-      } catch (error) {
-        failure = error
-      }
+      const outcome = await read().then(() => ({ success: true } as const), (error: unknown) => ({ error, success: false } as const))
+      if (outcome.success) return
+      failure = outcome.error
     }
     throw failure
   }
-  try {
-    const result = await command(executable, arguments_, environment_)
-    if (result.exitCode !== 0) {
-      const stderr = Object.values(environment_).reduce((output, value) => value.length === 0 ? output : output.replaceAll(value, "***"), result.stderr.trim())
-      throw new ReleasePublicationError(`mutation command failed: ${executable}${stderr.length === 0 ? "" : `\n${stderr}`}`)
-    }
-  } catch (error) {
-    try {
-      await reconcile()
-      return
-    } catch {
-      throw error
-    }
+  const recover = async (error: unknown): Promise<void> => {
+    await reconcile().then(() => undefined, () => { throw error })
   }
-  await reconcile()
+  const mutation = await command(executable, arguments_, environment_).then((result) => ({ result, success: true } as const), (error: unknown) => ({ error, success: false } as const))
+  if (!mutation.success) {
+    await recover(mutation.error)
+    return
+  }
+  const result = mutation.result
+  if (result.exitCode !== 0) {
+    const output = redactedCommandOutput(result, environment_)
+    await recover(new ReleasePublicationError(`mutation command failed: ${executable}${output.length === 0 ? "" : `\n${output}`}`))
+    return
+  }
+  const readBack = await reconcile().then(() => ({ success: true } as const), (error: unknown) => ({ error, success: false } as const))
+  if (readBack.success) return
+  const output = redactedCommandOutput(result, environment_)
+  if (output.length === 0 || !(readBack.error instanceof Error)) throw readBack.error
+  throw new ReleasePublicationError(`${readBack.error.message}\nmutation output:\n${output}`)
 }

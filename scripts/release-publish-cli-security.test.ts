@@ -61,7 +61,7 @@ describe("release publication credential and verifier surface", () => {
       const tokenChildren = children.filter((child: { readonly hasNodeAuthToken: boolean }) => child.hasNodeAuthToken)
 
       expect(result.exitCode).toBe(0)
-      expect(tokenChildren).toEqual([{ arguments_: ["publish", expect.stringMatching(/^\/.*\.tgz$/), "--access", "public", "--provenance"], hasNodeAuthToken: true, kind: "npm" }])
+      expect(tokenChildren).toEqual([{ arguments_: ["publish", expect.stringMatching(/^\/.*\.tgz$/), "--access", "public", "--provenance", "--dry-run=false"], hasNodeAuthToken: true, kind: "npm" }])
       expect(children.every((child: { readonly arguments_: readonly string[] }) => child.arguments_.every((argument) => argument !== "bootstrap-token"))).toBeTrue()
       expect(JSON.stringify(children)).not.toContain("bootstrap-token")
     } finally { await rm(root, { force: true, recursive: true }) }
@@ -77,6 +77,20 @@ describe("release publication credential and verifier surface", () => {
 
       expect(result.exitCode).not.toBe(0)
       expect(result.stderr).toContain("publish rejected ***")
+      expect(result.stderr).not.toContain("bootstrap-token")
+    } finally { await rm(root, { force: true, recursive: true }) }
+  })
+
+  test("reports successful mutation output when npm read-back remains absent", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-managed-bash-release-publish-readback-"))
+    const environment = await setupPublication(root)
+    await writeFile(fakeStatePath(environment), JSON.stringify({ npmPublishDryRun: true, npmPublishStdout: "dry run bootstrap-token" }))
+
+    try {
+      const result = await runPublication(["stage", "--candidate", join(root, "candidate"), "--control", join(root, "control", "CANDIDATE-RECEIPT.json")], { ...environment, NPM_BOOTSTRAP_VERSION: fixtureVersion, NPM_TOKEN: "bootstrap-token", RELEASE_FIRST_PUBLISH_BOOTSTRAP: "true" })
+
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stderr).toContain("dry run ***")
       expect(result.stderr).not.toContain("bootstrap-token")
     } finally { await rm(root, { force: true, recursive: true }) }
   })

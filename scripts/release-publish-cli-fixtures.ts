@@ -55,7 +55,7 @@ if (kind === "npm") {
   const args = arguments_[0] === "--prefix" ? arguments_.slice(2) : arguments_
   if (args[0] === "view") { if (state.npm === undefined || state.npmDelay > 0) { if (state.npmDelay > 0) { state.npmDelay -= 1; await save() }; console.error("E404"); process.exit(1) }; console.log(JSON.stringify(state.npm)); process.exit(0) }
   if (args[0] === "install") { state.npmInstallCount = (state.npmInstallCount ?? 0) + 1; await save(); process.exit(0) }
-  if (args[0] === "publish") { if (state.npmPublishExitCode !== undefined) { console.error(state.npmPublishStderr ?? "publish failed"); process.exit(state.npmPublishExitCode) }; const bytes = await Bun.file(args[1]).arrayBuffer(); const integrity = \`sha512-\${new Bun.CryptoHasher("sha512").update(bytes).digest("base64")}\`; state.npm = { name: packageName, version: process.env.RELEASE_VERSION, dist: { attestations: { provenance: { url: state.npmBundleURL ?? "https://registry.test/npm-provenance" } }, integrity } }; state.npmBundle = npmBundle(); state.npmDelay = state.npmDelayOnPublish ?? 0; await save(); if (state.ambiguous === "npm-publish") process.exit(1); process.exit(0) }
+  if (args[0] === "publish") { if (state.npmPublishStdout !== undefined) console.log(state.npmPublishStdout); if (state.npmPublishExitCode !== undefined) { console.error(state.npmPublishStderr ?? "publish failed"); process.exit(state.npmPublishExitCode) }; if (state.npmPublishDryRun === true) process.exit(0); const bytes = await Bun.file(args[1]).arrayBuffer(); const integrity = \`sha512-\${new Bun.CryptoHasher("sha512").update(bytes).digest("base64")}\`; state.npm = { name: packageName, version: process.env.RELEASE_VERSION, dist: { attestations: { provenance: { url: state.npmBundleURL ?? "https://registry.test/npm-provenance" } }, integrity } }; state.npmBundle = npmBundle(); state.npmDelay = state.npmDelayOnPublish ?? 0; await save(); if (state.ambiguous === "npm-publish") process.exit(1); process.exit(0) }
   if (args[0] === "audit") { if (state.npm === undefined) process.exit(1); console.log(JSON.stringify({ invalid: state.npmInvalid ?? [], missing: state.npmMissing ?? [] })); process.exit(state.npmAuditExitCode ?? 0) }
 }
 if (kind === "curl") { const url = arguments_.at(-1); if (url !== state.npm?.dist?.attestations?.provenance?.url) process.exit(2); console.log(JSON.stringify(state.npmBundle)); process.exit(0) }
@@ -93,7 +93,8 @@ export async function addExactAttestations(root: string, environment: Readonly<R
     const digest = (asset.digest as string).replace("sha256:", "")
     bundles[digest] = [{ bundle: provenance }]
     const relation = control.relations.find((value: { subject_name: string }) => value.subject_name === name)
-    if (relation !== undefined) bundles[digest]!.push({ bundle: statement(state.sbomPredicateType ?? "https://spdx.dev/Document/v2.3", JSON.parse(await readFile(join(root, "candidate", `${name}.spdx.json`), "utf8")), [{ digest: { sha256: digest }, name }]) })
+    const bundle = bundles[digest]
+    if (relation !== undefined && bundle !== undefined) bundle.push({ bundle: statement(state.sbomPredicateType ?? "https://spdx.dev/Document/v2.3", JSON.parse(await readFile(join(root, "candidate", `${name}.spdx.json`), "utf8")), [{ digest: { sha256: digest }, name }]) })
   }
   state.attestations = bundles
   await writeFile(fakeStatePath(environment), JSON.stringify(state))
