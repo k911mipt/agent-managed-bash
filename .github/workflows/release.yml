@@ -21,6 +21,7 @@ permissions:
 env:
   NODE_VERSION: 24.18.0
   NPM_VERSION: 11.5.1
+  SYFT_VERSION: v1.49.0
 
 concurrency:
   group: release-${{ github.ref }}
@@ -296,7 +297,7 @@ jobs:
           format: spdx-json
           upload-artifact: false
           upload-release-assets: false
-          syft-version: 1.49.0
+          syft-version: ${{ env.SYFT_VERSION }}
       - name: Create SBOM relation receipt
         run: bun scripts/release-candidate.ts relation --asset "input/${{ matrix.asset }}" --subject-receipt "input/${{ matrix.asset }}.receipt.json" --predicate "input/${{ matrix.asset }}.spdx.json" --schema schemas/spdx-schema.json --output "input/${{ matrix.asset }}.spdx.json.relation.json"
       - name: Upload SBOM relation artifact
