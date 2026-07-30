@@ -37,7 +37,7 @@ const [kind, ...arguments_] = Bun.argv.slice(2)
 const statePath = process.env.FAKE_RELEASE_STATE
 const state = JSON.parse(await Bun.file(statePath).text())
 const save = async () => Bun.write(statePath, JSON.stringify(state))
-await Bun.write(statePath + ".child-" + process.pid, JSON.stringify({ arguments_, hasNpmToken: process.env.NPM_TOKEN !== undefined, kind }))
+await Bun.write(statePath + ".child-" + process.pid, JSON.stringify({ arguments_, hasNodeAuthToken: process.env.NODE_AUTH_TOKEN !== undefined, kind }))
 const packageName = "@k911mipt/opencode-agent-managed-bash"
 const source = state.githubClaims ?? {}
 const predicate = () => ({ buildDefinition: { buildType: "https://actions.github.io/buildtypes/workflow/v1", externalParameters: { workflow: { path: source.path ?? ".github/workflows/release.yml", ref: source.ref ?? \`refs/tags/\${process.env.RELEASE_TAG}\`, repository: source.repository ?? \`https://github.com/\${process.env.RELEASE_REPOSITORY}\` } }, internalParameters: { github: { runner_environment: source.environment ?? "github-hosted" } }, resolvedDependencies: [{ digest: { gitCommit: source.sha ?? process.env.RELEASE_COMMIT }, uri: source.uri ?? \`git+https://github.com/\${process.env.RELEASE_REPOSITORY}@refs/tags/\${process.env.RELEASE_TAG}\` }] }, runDetails: { builder: { id: source.builder ?? \`https://github.com/\${process.env.RELEASE_REPOSITORY}/.github/workflows/release.yml@refs/tags/\${process.env.RELEASE_TAG}\` }, metadata: { invocationId: \`https://github.com/\${process.env.RELEASE_REPOSITORY}/actions/runs/789/attempts/1\` } } })
