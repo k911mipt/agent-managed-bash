@@ -274,6 +274,20 @@ describe("release publication fake CLI surface", () => {
     } finally { await rm(root, { force: true, recursive: true }) }
   })
 
+  test("reports mutation stderr without exposing the bootstrap token", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-managed-bash-release-publish-error-"))
+    const environment = await setupPublication(root)
+    await writeFile(fakeStatePath(environment), JSON.stringify({ npmPublishExitCode: 1, npmPublishStderr: "publish rejected bootstrap-token" }))
+
+    try {
+      const result = await runPublication(["stage", "--candidate", join(root, "candidate"), "--control", join(root, "control", "CANDIDATE-RECEIPT.json")], { ...environment, NPM_BOOTSTRAP_VERSION: fixtureVersion, NPM_TOKEN: "bootstrap-token", RELEASE_FIRST_PUBLISH_BOOTSTRAP: "true" })
+
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stderr).toContain("publish rejected ***")
+      expect(result.stderr).not.toContain("bootstrap-token")
+    } finally { await rm(root, { force: true, recursive: true }) }
+  })
+
   test("rejects malformed and stale bootstrap credentials before child commands", async () => {
     const cases = [
       { NPM_BOOTSTRAP_VERSION: fixtureVersion, RELEASE_FIRST_PUBLISH_BOOTSTRAP: "true" },

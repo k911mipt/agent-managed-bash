@@ -86,7 +86,10 @@ export async function mutateThenRead(executable: string, arguments_: readonly st
   }
   try {
     const result = await command(executable, arguments_, environment_)
-    if (result.exitCode !== 0) throw new ReleasePublicationError(`mutation command failed: ${executable}`)
+    if (result.exitCode !== 0) {
+      const stderr = Object.values(environment_).reduce((output, value) => value.length === 0 ? output : output.replaceAll(value, "***"), result.stderr.trim())
+      throw new ReleasePublicationError(`mutation command failed: ${executable}${stderr.length === 0 ? "" : `\n${stderr}`}`)
+    }
   } catch (error) {
     try {
       await reconcile()
