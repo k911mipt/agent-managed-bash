@@ -1,6 +1,6 @@
 import { appendFile, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 import { parseStrictJSON, readJSON, regularBytes } from "./release-candidate-data"
 import { readCandidateControl, validateCandidateControl } from "./release-candidate-control"
 import { validateReleaseCandidate } from "./release-candidate-manifest"
@@ -81,7 +81,7 @@ async function reconcileNpm(candidate: PublicationCandidate, npm: string, bootst
   if (current === undefined) {
     if (bootstrapRequested && !bootstrapAllowed) throw new ReleasePublicationError("invalid npm bootstrap credentials")
     const token = bootstrapAllowed ? environment("NPM_TOKEN") : undefined
-    await mutateThenRead(npm, ["publish", tarball.path, "--access", "public", "--provenance"], async () => readNpm(candidate, npm, tarball), token === undefined ? {} : { NODE_AUTH_TOKEN: token })
+    await mutateThenRead(npm, ["publish", resolve(tarball.path), "--access", "public", "--provenance"], async () => readNpm(candidate, npm, tarball), token === undefined ? {} : { NODE_AUTH_TOKEN: token })
     return
   }
   if (bootstrapRequested || process.env["NPM_TOKEN"] !== undefined || process.env["NPM_BOOTSTRAP_VERSION"] !== undefined) throw new ReleasePublicationError("stale npm bootstrap credentials")
