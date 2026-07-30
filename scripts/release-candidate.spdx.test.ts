@@ -102,6 +102,15 @@ describe("official SPDX validation", () => {
     await expect(validateSpdxDocument(fileOnly, schemaPath)).resolves.toBeUndefined()
   })
 
+  test("accepts a relationship-only described inventory emitted by Syft", async () => {
+    // Given
+    const relationshipOnly = { ...validSpdxDocument() }
+    delete relationshipOnly["documentDescribes"]
+
+    // When / Then
+    await expect(validateSpdxDocument(relationshipOnly, schemaPath)).resolves.toBeUndefined()
+  })
+
   test("rejects a duplicate namespace, malformed bytes, and oversized SBOM before assembly", async () => {
     // Given
     const root = await mkdtemp(join(tmpdir(), "agent-managed-bash-spdx-"))
