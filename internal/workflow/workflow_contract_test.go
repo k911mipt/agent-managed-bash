@@ -59,6 +59,7 @@ func Test_CIWorkflow_runs_read_only_full_verification_on_pull_requests_and_maste
 func Test_ReleaseWorkflow_validates_reviewed_tag_and_verifies_all_native_targets(t *testing.T) {
 	// Given
 	workflow := loadWorkflow(t, "release.yml")
+	toolchain := mappingValue(t, workflow, "env")
 
 	// When
 	triggers := mappingValue(t, workflow, "on")
@@ -124,6 +125,8 @@ func Test_ReleaseWorkflow_validates_reviewed_tag_and_verifies_all_native_targets
 	}
 	scanner := job(t, workflow, "sbom")
 	prepare := job(t, workflow, "prepare")
+	require.Equal(t, "v1.49.0", scalarValue(t, toolchain, "SYFT_VERSION"))
+	require.Equal(t, "${{ env.SYFT_VERSION }}", scalarValue(t, mappingValue(t, stepByName(t, scanner, "Generate SPDX SBOM"), "with"), "syft-version"))
 	require.Equal(t, []string{"validate", "produce"}, scalarOrSequenceValues(t, mappingValue(t, scanner, "needs")))
 	require.Equal(t, []string{"validate", "produce", "sbom"}, scalarOrSequenceValues(t, mappingValue(t, prepare, "needs")))
 }
