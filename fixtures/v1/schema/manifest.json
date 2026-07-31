@@ -1,5 +1,6 @@
 {
   "cases": [
+    { "name": "valid request start", "schema": "request", "path": "valid/request-start.json", "valid": true },
     { "name": "valid request run", "schema": "request", "path": "valid/request-run.json", "valid": true },
     { "name": "valid request wait", "schema": "request", "path": "valid/request-wait.json", "valid": true },
     { "name": "valid request status", "schema": "request", "path": "valid/request-status.json", "valid": true },
@@ -8,6 +9,7 @@
     { "name": "valid request remove", "schema": "request", "path": "valid/request-remove.json", "valid": true },
     { "name": "valid request list", "schema": "request", "path": "valid/request-list.json", "valid": true },
     { "name": "valid request version", "schema": "request", "path": "valid/request-version.json", "valid": true },
+    { "name": "valid response start", "schema": "response", "path": "valid/response-start.json", "valid": true },
     { "name": "valid response run", "schema": "response", "path": "valid/response-run.json", "valid": true },
     { "name": "valid response wait", "schema": "response", "path": "valid/response-wait.json", "valid": true },
     { "name": "valid terminal runner-lost wait", "schema": "response", "path": "valid/response-wait-runner-lost.json", "valid": true },
@@ -20,6 +22,7 @@
     { "name": "valid response remove", "schema": "response", "path": "valid/response-remove.json", "valid": true },
     { "name": "valid response list", "schema": "response", "path": "valid/response-list.json", "valid": true },
     { "name": "valid response version", "schema": "response", "path": "valid/response-version.json", "valid": true },
+    { "name": "valid recoverable run error", "schema": "response", "path": "valid/error-run-recoverable-job.json", "valid": true },
     { "name": "valid validation error", "schema": "response", "path": "valid/error-validation.json", "valid": true },
     { "name": "valid malformed-json error", "schema": "response", "path": "valid/error-malformed-json.json", "valid": true },
     { "name": "valid incompatible-version error", "schema": "response", "path": "valid/error-incompatible-version.json", "valid": true },

@@ -2,5 +2,8 @@
   "schema_version": 1,
   "action": "run",
   "context": { "session_id": "session-1", "workspace_path": "/workspace", "cwd": "/workspace" },
-  "payload": { "command": "printf ok", "hard_timeout_ms": 60000, "output_limit_bytes": 104857600 }
+  "payload": {
+    "command": "printf ok", "hard_timeout_ms": 60000, "output_limit_bytes": 104857600,
+    "timeout_ms": 30000, "idle_timeout_ms": 10000
+  }
 }

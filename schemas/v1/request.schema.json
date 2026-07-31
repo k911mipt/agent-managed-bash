@@ -3,6 +3,7 @@
   "$id": "https://agent-managed-bash.dev/schema/v1/request.schema.json",
   "title": "Request",
   "oneOf": [
+    { "$ref": "#/$defs/startRequest" },
     { "$ref": "#/$defs/runRequest" },
     { "$ref": "#/$defs/waitRequest" },
     { "$ref": "#/$defs/statusRequest" },
@@ -13,6 +14,15 @@
     { "$ref": "#/$defs/versionRequest" }
   ],
   "$defs": {
+    "startRequest": {
+      "title": "StartRequest", "type": "object", "additionalProperties": false,
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 }, "action": { "type": "string", "const": "start" },
+        "context": { "$ref": "models.schema.json#/$defs/trustedContext" },
+        "payload": { "$ref": "models.schema.json#/$defs/startPayload" }
+      },
+      "required": ["schema_version", "action", "context", "payload"]
+    },
     "runRequest": {
       "title": "RunRequest", "type": "object", "additionalProperties": false,
       "properties": {
