@@ -140,6 +140,51 @@ describe("managed_bash lifecycle cleanup", () => {
     expect(calls.filter((request) => request.action === "cancel")).toHaveLength(1)
   })
 
+  test("dispose waits for an in-flight start job to be cancelled", async () => {
+    // Given
+    const calls: Request[] = []
+    let releaseStart: ((response: ReturnType<typeof startResponse>) => void) | undefined
+    let notifyStartStarted: (() => void) | undefined
+    const startStarted = new Promise<void>((resolve) => {
+      notifyStartStarted = resolve
+    })
+    const executor: CliExecutor = {
+      async execute(request) {
+        calls.push(request)
+        switch (request.action) {
+          case "version":
+            return response(versionResponse())
+          case "start":
+            notifyStartStarted?.()
+            return await new Promise((resolve) => {
+              releaseStart = (start) => resolve(response(start))
+            })
+          case "cancel":
+            return response(cancellationResponse(request))
+          default:
+            throw new TypeError(`unexpected action: ${request.action}`)
+        }
+      },
+    }
+    const controller = await createManagedBashController({ executor })
+    const start = controller.execute({ action: "start", command: "sleep 1" }, toolContext("session-a"))
+    await startStarted
+
+    // When
+    let disposed = false
+    const disposal = controller.dispose().then(() => {
+      disposed = true
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    // Then
+    expect(disposed).toBeFalse()
+    releaseStart?.(startResponse("session-a", "sleep 1"))
+    await Promise.all([start, disposal])
+    expect(calls.filter((request) => request.action === "cancel")).toHaveLength(1)
+  })
+
   test("session.deleted prevents a run from launching after delayed permission approval", async () => {
     const calls: Request[] = []
     let releasePermission: (() => void) | undefined

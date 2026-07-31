@@ -29,6 +29,7 @@ export type SessionRegistry = {
 
 export function createSessionRegistry(): SessionRegistry {
   const closedSessionIDs = new Set<string>()
+  const deferredCleanups = new Set<Promise<void>>()
   const sessions = new Map<string, SessionState>()
   let disposed = false
 
@@ -45,7 +46,9 @@ export function createSessionRegistry(): SessionRegistry {
       if (pendingLaunch.abort()) {
         abortedCompletions.push(pendingLaunch.completion)
       } else {
-        void pendingLaunch.completion.then(() => cancelTrackedJobs(state, cancelJob))
+        const cleanup = pendingLaunch.completion.then(() => cancelTrackedJobs(state, cancelJob))
+        deferredCleanups.add(cleanup)
+        void cleanup.then(() => deferredCleanups.delete(cleanup))
       }
     }
     await Promise.allSettled(abortedCompletions)
@@ -100,6 +103,7 @@ export function createSessionRegistry(): SessionRegistry {
     async dispose(cancelJob) {
       disposed = true
       await Promise.allSettled([...sessions.keys()].map((sessionID) => close(sessionID, cancelJob)))
+      await Promise.allSettled([...deferredCleanups])
     },
   }
 }
