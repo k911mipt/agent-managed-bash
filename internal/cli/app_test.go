@@ -115,7 +115,7 @@ func Test_Application_help_prints_usage_without_reading_stdin(t *testing.T) {
 
 	// Then
 	require.Equal(t, 0, exitCode)
-	require.Equal(t, "usage: managed-bash <run|wait|status|output|cancel|remove|list|version>\n", stdout.String())
+	require.Equal(t, "usage: managed-bash <start|run|wait|status|output|cancel|remove|list|version>\n", stdout.String())
 	require.Empty(t, stderr.String())
 }
 
