@@ -12,12 +12,12 @@ script_dir=$(CDPATH= cd -- "$script_dir" && pwd -P)
 
 action=${1-}
 if [ "$action" = --help ] || [ "$action" = -h ]; then
-	printf '%s\n' 'usage: managed-bash run|wait|status|output|cancel|remove|list|version [arguments]'
+	printf '%s\n' 'usage: managed-bash start|run|wait|status|output|cancel|remove|list|version [arguments]'
 	exit 0
 fi
 case $action in
-	run|wait|status|output|cancel|remove|list|version) ;;
-	'') printf '%s\n' 'managed-bash action is required: run|wait|status|output|cancel|remove|list|version' >&2; exit 2 ;;
+	start|run|wait|status|output|cancel|remove|list|version) ;;
+	'') printf '%s\n' 'managed-bash action is required: start|run|wait|status|output|cancel|remove|list|version' >&2; exit 2 ;;
 	*) printf 'unsupported managed-bash action: %s\n' "$action" >&2; exit 2 ;;
 esac
 
