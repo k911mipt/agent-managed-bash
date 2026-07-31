@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { releasePublication } from "./release-publish"
+import { fakeStatePath, runPublication, setupPublication } from "./release-publish-cli-fixtures"
 
 describe("release publication", () => {
   test("stages only the candidate tarball and leaves a complete draft when npm is absent", async () => {
@@ -33,6 +34,21 @@ describe("release publication", () => {
 
       // Then
       expect(result.kind).toBe("staged")
+    } finally {
+      await rm(root, { force: true, recursive: true })
+    }
+  })
+
+  test("fails closed when a non-404 attestation error contains not found", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-managed-bash-release-api-error-"))
+    const environment = await setupPublication(root)
+    await writeFile(fakeStatePath(environment), JSON.stringify({ attestationAPIError: "repository not found after authentication failure" }))
+
+    try {
+      const result = await runPublication(["stage", "--candidate", join(root, "candidate"), "--control", join(root, "control", "CANDIDATE-RECEIPT.json")], environment)
+
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stderr).toContain("attestation enumeration failed")
     } finally {
       await rm(root, { force: true, recursive: true })
     }

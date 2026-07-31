@@ -105,7 +105,7 @@ export function assertNpmCertificateVerification(value: unknown, candidate: Cand
 
 async function verifiedStatements(asset: Asset, candidate: Candidate, command: Command): Promise<readonly VerifiedStatement[]> {
   const result = await command("gh", ["api", `repos/${candidate.repository}/attestations/sha256:${asset.sha256}`])
-  if (result.exitCode === 1 && result.stderr.includes("not found")) return []
+  if (result.exitCode === 1 && result.stderr.trim() === "gh: Not Found (HTTP 404)") return []
   if (result.exitCode !== 0) throw new Error("attestation enumeration failed")
   const response = record(parseStrictJSON(result.stdout), "attestation response")
   if (!Array.isArray(response["attestations"])) throw new Error("invalid attestation response")
