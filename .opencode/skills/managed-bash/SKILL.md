@@ -19,7 +19,8 @@ The skill installs no binary, package, config, or symlink. The fallback assumes 
 ## Actions
 
 ```sh
-scripts/managed-bash run [--hard-timeout-ms N] -- '<shell command>'
+scripts/managed-bash start [--hard-timeout-ms N] -- '<shell command>'
+scripts/managed-bash run [--hard-timeout-ms N] [--timeout-ms N] [--idle-timeout-ms N] -- '<shell command>'
 scripts/managed-bash wait JOB_ID [--timeout-ms N] [--idle-timeout-ms N]
 scripts/managed-bash status JOB_ID
 scripts/managed-bash output JOB_ID
@@ -28,6 +29,8 @@ scripts/managed-bash remove JOB_ID
 scripts/managed-bash list
 scripts/managed-bash version
 ```
+
+Prefer `run`: it starts the command and returns after terminal completion, an output-idle checkpoint, or an observation-timeout checkpoint. Its response includes the observation, captured output, and the corresponding `terminal`, `output_idle`, or `observation_timeout` reason. Use `start` when later control or parallel observation requires the job ID immediately; it returns detached job metadata without observing output.
 
 Use `MANAGED_BASH_SESSION_ID` for a stable caller identity. The CLI adapter accepts `MANAGED_BASH_WORKSPACE_PATH`; the tmux fallback deliberately derives workspace identity from its physical `pwd -P`. Tests and isolated callers may set `MANAGED_BASH_TMUX_SOCKET` to a safe tmux socket name.
 
