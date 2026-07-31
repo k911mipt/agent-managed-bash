@@ -120,8 +120,8 @@ async function runScenario(name: string, missingBinary: boolean): Promise<void> 
     }
 
     requireCondition(requestCount === 4, `success: expected four model requests, got ${requestCount}`)
-    requireCondition(tools.map((event) => event.action).join(",") === "run,wait,wait", "success: unexpected action sequence")
-    requireCondition(tools[0]?.output.includes(": running") === true, "success: run did not return a live job")
+    requireCondition(tools.map((event) => event.action).join(",") === "start,wait,wait", "success: unexpected action sequence")
+    requireCondition(tools[0]?.output.includes(": running") === true, "success: start did not return a live job")
     requireCondition(tools[1]?.output.includes(": running") === true, "success: wait did not return an idle checkpoint")
     requireCondition(tools[2]?.output.includes(": succeeded") === true, "success: final wait did not complete")
     requireCondition(tools[2]?.output.includes("e2e-complete") === true, "success: final output was missing")
@@ -140,7 +140,7 @@ function responseFor(count: number, missingBinary: boolean, jobID: string | unde
   }
   switch (count) {
     case 1:
-      return toolCall("call-run", { action: "run", command: checkpointCommand, hard_timeout_ms: 15_000 })
+      return toolCall("call-start", { action: "start", command: checkpointCommand, hard_timeout_ms: 15_000 })
     case 2:
       return toolCall("call-wait-idle", { action: "wait", job_id: requireJobID(jobID), timeout_ms: 2000, idle_timeout_ms: 100 })
     case 3:
