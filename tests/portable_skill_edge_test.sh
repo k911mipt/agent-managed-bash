@@ -39,7 +39,7 @@ if (!validate(response)) throw new Error(JSON.stringify(validate.errors))
 assert_nonzero_exit() {
 	exit_code=$1
 	run_tmux run -- "exit $exit_code" >"$stage/run-$exit_code.json" 2>"$stage/run-$exit_code.stderr"
-	job=$(OUTPUT_PATH="$stage/run-$exit_code.json" bun -e 'process.stdout.write(JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text()).result.job_id)')
+	job=$(OUTPUT_PATH="$stage/run-$exit_code.json" bun -e 'process.stdout.write(JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text()).result.observation.job.job_id)')
 	run_tmux wait "$job" --timeout-ms 5000 --idle-timeout-ms 5000 >"$stage/wait-$exit_code.json" 2>"$stage/wait-$exit_code.stderr"
 	validate_response "$stage/wait-$exit_code.json"
 	OUTPUT_PATH="$stage/wait-$exit_code.json" EXPECTED_CODE="$exit_code" bun -e '
@@ -53,6 +53,36 @@ if (response.result.observation.process_result.exit_code !== Number(process.env.
 assert_nonzero_exit 128
 assert_nonzero_exit 193
 assert_nonzero_exit 255
+
+snapshot_command="while [ ! -f '$workspace/snapshot-release' ]; do sleep 0.05; done"
+run_tmux start -- "$snapshot_command" >"$stage/snapshot-start.json" 2>"$stage/snapshot-start.stderr"
+snapshot_job=$(OUTPUT_PATH="$stage/snapshot-start.json" bun -e 'process.stdout.write(JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text()).result.job_id)')
+(
+	script_dir="$root/.opencode/skills/managed-bash/scripts"
+	. "$script_dir/common.sh"
+	tmux_binary=$(command -v tmux)
+	current_owner=edge-test
+	current_workspace=$workspace
+	. "$script_dir/tmux-lib.sh"
+	capture_job_snapshot "$snapshot_job"
+	test "$snapshot_status" = running
+	: >"$workspace/snapshot-release"
+	retries=0
+	while [ "$(job_status "$snapshot_job")" = running ] && [ "$retries" -lt 100 ]; do
+		sleep 0.05
+		retries=$((retries + 1))
+	done
+	test "$(job_status "$snapshot_job")" = succeeded
+	printf '{"schema_version":1,"ok":true,"action":"wait","result":{"reason":"output_idle","observation":%s,"output":%s}}\n' \
+		"$(observation_snapshot_json)" "$(output_snapshot_json)"
+) >"$stage/snapshot-transition.json"
+validate_response "$stage/snapshot-transition.json"
+OUTPUT_PATH="$stage/snapshot-transition.json" bun -e '
+const response = JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text())
+if (response.result.observation.job.status !== "running") process.exit(1)
+if (response.result.observation.process_result !== undefined || response.result.output.eof !== false) process.exit(1)
+'
+run_tmux remove "$snapshot_job" >/dev/null 2>"$stage/snapshot-remove.stderr"
 
 (
 	script_dir="$root/.opencode/skills/managed-bash/scripts"

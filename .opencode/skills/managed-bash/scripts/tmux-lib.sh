@@ -123,79 +123,102 @@ job_status() {
 	fi
 }
 
-job_json() {
-	job=$1
-	status=$(job_status "$job")
-	command=$(job_option "$job" @managed_bash_command)
-	owner=$(job_option "$job" @managed_bash_owner)
-	workspace=$(job_option "$job" @managed_bash_workspace)
-	cwd=$(job_option "$job" @managed_bash_cwd)
-	created=$(job_option "$job" @managed_bash_created_ms)
-	hard_timeout=$(job_option "$job" @managed_bash_hard_timeout_ms)
-	output=$(capture_output "$job")
-	bytes=$(printf '%s' "$output" | wc -c | tr -d ' ')
-	printf '{"job_id":%s,"status":%s,"owner_session_id":%s,"workspace_path":%s,"cwd":%s,"command":%s,"created_at_unix_ms":%s,"started_at_unix_ms":%s,"captured_bytes":%s,"hard_timeout_ms":%s,"output_limit_bytes":104857600' \
-		"$(json_quote "$job")" "$(json_quote "$status")" "$(json_quote "$owner")" "$(json_quote "$workspace")" \
-		"$(json_quote "$cwd")" "$(json_quote "$command")" "$created" "$created" "$bytes" "$hard_timeout"
-	if [ "$status" != running ]; then
-		finished=$(job_option "$job" @managed_bash_finished_ms)
-		if [ -z "$finished" ]; then
-			finished=$(now_ms)
-			set_job_option "$job" @managed_bash_finished_ms "$finished"
+capture_job_snapshot() {
+	snapshot_job=$1
+	snapshot_status=$(job_status "$snapshot_job")
+	snapshot_command=$(job_option "$snapshot_job" @managed_bash_command)
+	snapshot_owner=$(job_option "$snapshot_job" @managed_bash_owner)
+	snapshot_workspace=$(job_option "$snapshot_job" @managed_bash_workspace)
+	snapshot_cwd=$(job_option "$snapshot_job" @managed_bash_cwd)
+	snapshot_created=$(job_option "$snapshot_job" @managed_bash_created_ms)
+	snapshot_hard_timeout=$(job_option "$snapshot_job" @managed_bash_hard_timeout_ms)
+	snapshot_output=$(capture_output "$snapshot_job")
+	snapshot_bytes=$(printf '%s' "$snapshot_output" | wc -c | tr -d ' ')
+	snapshot_finished=
+	snapshot_exit_code=
+	snapshot_signal=
+	if [ "$snapshot_status" != running ]; then
+		snapshot_finished=$(job_option "$snapshot_job" @managed_bash_finished_ms)
+		if [ -z "$snapshot_finished" ]; then
+			snapshot_finished=$(now_ms)
+			set_job_option "$snapshot_job" @managed_bash_finished_ms "$snapshot_finished"
 		fi
-		printf ',"finished_at_unix_ms":%s' "$finished"
+		case $snapshot_status in
+			succeeded|nonzero_exit)
+				snapshot_exit_code=$(job_option "$snapshot_job" @managed_bash_exit_code)
+				[ -n "$snapshot_exit_code" ] || snapshot_exit_code=$(pane_value "$snapshot_job" '#{pane_dead_status}')
+				[ -n "$snapshot_exit_code" ] || snapshot_exit_code=1
+				;;
+			signal_exit)
+				code=$(job_option "$snapshot_job" @managed_bash_exit_code)
+				if [ -n "$code" ] && [ "$code" -ge 129 ] && [ "$code" -le 192 ]; then
+					snapshot_signal=$((code - 128))
+				else
+					snapshot_signal=$(pane_value "$snapshot_job" '#{pane_dead_signal}')
+				fi
+				snapshot_signal=$(signal_number "$snapshot_signal") || snapshot_signal=15
+				;;
+		esac
+	fi
+}
+
+job_snapshot_json() {
+	printf '{"job_id":%s,"status":%s,"owner_session_id":%s,"workspace_path":%s,"cwd":%s,"command":%s,"created_at_unix_ms":%s,"started_at_unix_ms":%s,"captured_bytes":%s,"hard_timeout_ms":%s,"output_limit_bytes":104857600' \
+		"$(json_quote "$snapshot_job")" "$(json_quote "$snapshot_status")" "$(json_quote "$snapshot_owner")" "$(json_quote "$snapshot_workspace")" \
+		"$(json_quote "$snapshot_cwd")" "$(json_quote "$snapshot_command")" "$snapshot_created" "$snapshot_created" "$snapshot_bytes" "$snapshot_hard_timeout"
+	if [ "$snapshot_status" != running ]; then
+		printf ',"finished_at_unix_ms":%s' "$snapshot_finished"
 	fi
 	printf '}'
 }
 
-process_result_json() {
-	job=$1
-	status=$(job_status "$job")
-	[ "$status" != running ] || return 0
-	output=$(capture_output "$job")
-	bytes=$(printf '%s' "$output" | wc -c | tr -d ' ')
-	finished=$(job_option "$job" @managed_bash_finished_ms)
-	if [ -z "$finished" ]; then
-		finished=$(now_ms)
-		set_job_option "$job" @managed_bash_finished_ms "$finished"
-	fi
-	printf '{"status":%s,"finished_at_unix_ms":%s,"captured_bytes":%s' "$(json_quote "$status")" "$finished" "$bytes"
-	case $status in
+process_result_snapshot_json() {
+	[ "$snapshot_status" != running ] || return 0
+	printf '{"status":%s,"finished_at_unix_ms":%s,"captured_bytes":%s' \
+		"$(json_quote "$snapshot_status")" "$snapshot_finished" "$snapshot_bytes"
+	case $snapshot_status in
 		succeeded|nonzero_exit)
-			code=$(job_option "$job" @managed_bash_exit_code)
-			[ -n "$code" ] || code=$(pane_value "$job" '#{pane_dead_status}')
-			printf ',"exit_code":%s' "${code:-1}"
+			printf ',"exit_code":%s' "$snapshot_exit_code"
 			;;
-		signal_exit|cancelled|hard_timeout)
-			code=$(job_option "$job" @managed_bash_exit_code)
-			if [ -n "$code" ] && [ "$code" -ge 129 ] && [ "$code" -le 192 ]; then signal=$((code - 128)); else signal=$(pane_value "$job" '#{pane_dead_signal}'); fi
-			if [ "$status" = signal_exit ]; then
-				signal=$(signal_number "$signal") || signal=15
-				printf ',"signal":%s' "$signal"
-			fi
+		signal_exit)
+			printf ',"signal":%s' "$snapshot_signal"
 			;;
 	esac
 	printf '}'
 }
 
-observation_json() {
-	job=$1
-	status=$(job_status "$job")
-	printf '{"job":%s' "$(job_json "$job")"
-	if [ "$status" != running ]; then
-		printf ',"process_result":%s' "$(process_result_json "$job")"
+observation_snapshot_json() {
+	printf '{"job":%s' "$(job_snapshot_json)"
+	if [ "$snapshot_status" != running ]; then
+		printf ',"process_result":%s' "$(process_result_snapshot_json)"
 	fi
 	printf '}'
 }
 
-output_json() {
-	job=$1
-	output=$(capture_output "$job")
-	bytes=$(printf '%s' "$output" | wc -c | tr -d ' ')
-	status=$(job_status "$job")
-	if [ "$status" = running ]; then eof=false; else eof=true; fi
+output_snapshot_json() {
+	if [ "$snapshot_status" = running ]; then eof=false; else eof=true; fi
 	printf '{"text":%s,"start_cursor_bytes":0,"next_cursor_bytes":%s,"captured_bytes":%s,"eof":%s}' \
-		"$(json_quote "$output")" "$bytes" "$bytes" "$eof"
+		"$(json_quote "$snapshot_output")" "$snapshot_bytes" "$snapshot_bytes" "$eof"
+}
+
+job_json() {
+	capture_job_snapshot "$1"
+	job_snapshot_json
+}
+
+process_result_json() {
+	capture_job_snapshot "$1"
+	process_result_snapshot_json
+}
+
+observation_json() {
+	capture_job_snapshot "$1"
+	observation_snapshot_json
+}
+
+output_json() {
+	capture_job_snapshot "$1"
+	output_snapshot_json
 }
 
 terminate_job() {
