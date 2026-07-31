@@ -36,8 +36,9 @@ job_id=$(OUTPUT_PATH="$temp_dir/run.stdout" bun -e '
 const path = process.env.OUTPUT_PATH
 if (!path) throw new Error("OUTPUT_PATH is required")
 const response = JSON.parse(await Bun.file(path).text())
-if (!response.ok || response.action !== "run" || response.result.status !== "running") process.exit(1)
-process.stdout.write(response.result.job_id)
+if (!response.ok || response.action !== "run" || response.result.reason !== "terminal") process.exit(1)
+if (response.result.observation.job.status !== "succeeded" || response.result.output.text !== "acceptance" || !response.result.output.eof) process.exit(1)
+process.stdout.write(response.result.observation.job.job_id)
 ')
 
 wait_request=$(printf '{"schema_version":1,"action":"wait","context":{"session_id":"acceptance","workspace_path":"%s","cwd":"%s"},"payload":{"job_id":"%s","timeout_ms":5000,"idle_timeout_ms":5000}}' "$workspace" "$workspace" "$job_id")
@@ -52,7 +53,8 @@ OUTPUT_PATH="$temp_dir/wait.stdout" bun -e '
 const path = process.env.OUTPUT_PATH
 if (!path) throw new Error("OUTPUT_PATH is required")
 const response = JSON.parse(await Bun.file(path).text())
-if (!response.ok || response.action !== "wait" || response.result.observation.job.status !== "succeeded" || response.result.output.text !== "acceptance") process.exit(1)
+if (!response.ok || response.action !== "wait" || response.result.reason !== "terminal") process.exit(1)
+if (response.result.observation.job.status !== "succeeded" || response.result.output.text !== "" || !response.result.output.eof) process.exit(1)
 '
 
 status_request=$(printf '{"schema_version":1,"action":"status","context":{"session_id":"acceptance","workspace_path":"%s","cwd":"%s"},"payload":{"job_id":"%s"}}' "$workspace" "$workspace" "$job_id")
@@ -100,12 +102,12 @@ missing_exit=$?
 set -e
 test "$missing_exit" -eq 3
 
-active_run_request=$(printf '{"schema_version":1,"action":"run","context":{"session_id":"acceptance","workspace_path":"%s","cwd":"%s"},"payload":{"command":"sleep 30"}}' "$workspace" "$workspace")
+active_run_request=$(printf '{"schema_version":1,"action":"start","context":{"session_id":"acceptance","workspace_path":"%s","cwd":"%s"},"payload":{"command":"sleep 30"}}' "$workspace" "$workspace")
 (
 	cd "$workspace"
 	printf '%s' "$active_run_request" |
 		env MANAGED_BASH_HOST_SESSION_ID=acceptance MANAGED_BASH_HOST_WORKSPACE_PATH="$workspace" \
-		"$binary" run >"$temp_dir/active-run.stdout" 2>"$temp_dir/active-run.stderr"
+		"$binary" start >"$temp_dir/active-run.stdout" 2>"$temp_dir/active-run.stderr"
 )
 active_job_id=$(OUTPUT_PATH="$temp_dir/active-run.stdout" bun -e '
 const path = process.env.OUTPUT_PATH
@@ -144,12 +146,12 @@ active_wait_request=$(printf '{"schema_version":1,"action":"wait","context":{"se
 		"$binary" remove >"$temp_dir/active-cleanup.stdout" 2>"$temp_dir/active-cleanup.stderr"
 )
 
-corrupt_run_request=$(printf '{"schema_version":1,"action":"run","context":{"session_id":"acceptance","workspace_path":"%s","cwd":"%s"},"payload":{"command":"printf corrupt"}}' "$workspace" "$workspace")
+corrupt_run_request=$(printf '{"schema_version":1,"action":"start","context":{"session_id":"acceptance","workspace_path":"%s","cwd":"%s"},"payload":{"command":"printf corrupt"}}' "$workspace" "$workspace")
 (
 	cd "$workspace"
 	printf '%s' "$corrupt_run_request" |
 		env MANAGED_BASH_HOST_SESSION_ID=acceptance MANAGED_BASH_HOST_WORKSPACE_PATH="$workspace" \
-		"$binary" run >"$temp_dir/corrupt-run.stdout" 2>"$temp_dir/corrupt-run.stderr"
+		"$binary" start >"$temp_dir/corrupt-run.stdout" 2>"$temp_dir/corrupt-run.stderr"
 )
 corrupt_job_id=$(OUTPUT_PATH="$temp_dir/corrupt-run.stdout" bun -e '
 const path = process.env.OUTPUT_PATH
