@@ -1,6 +1,7 @@
 {
   "schema_version": 1, "ok": true, "action": "wait",
   "result": {
+    "reason": "terminal",
     "observation": {
       "job": {
         "job_id": "job-1", "status": "runner_lost", "owner_session_id": "session-1",

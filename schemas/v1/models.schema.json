@@ -10,7 +10,7 @@
     "schemaVersion": { "type": "integer", "const": 1 },
     "action": {
       "type": "string",
-      "enum": ["run", "wait", "status", "output", "cancel", "remove", "list", "version"]
+      "enum": ["start", "run", "wait", "status", "output", "cancel", "remove", "list", "version"]
     },
     "jobId": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-zA-Z0-9_-]+$" },
     "sessionId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9._:-]+$" },
@@ -50,13 +50,25 @@
       },
       "required": ["session_id", "workspace_path", "cwd"]
     },
-    "runPayload": {
+    "startPayload": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "command": { "type": "string", "minLength": 1, "maxLength": 65536 },
         "hard_timeout_ms": { "$ref": "models.schema.json#/$defs/timeoutMs" },
         "output_limit_bytes": { "type": "integer", "minimum": 1, "maximum": 104857600 }
+      },
+      "required": ["command"]
+    },
+    "runPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command": { "type": "string", "minLength": 1, "maxLength": 65536 },
+        "hard_timeout_ms": { "$ref": "models.schema.json#/$defs/timeoutMs" },
+        "output_limit_bytes": { "type": "integer", "minimum": 1, "maximum": 104857600 },
+        "timeout_ms": { "$ref": "models.schema.json#/$defs/timeoutMs" },
+        "idle_timeout_ms": { "$ref": "models.schema.json#/$defs/timeoutMs" }
       },
       "required": ["command"]
     },
@@ -364,6 +376,46 @@
         "output": { "$ref": "models.schema.json#/$defs/outputChunk" }
       },
       "required": ["observation", "output"]
+    },
+    "observationReason": {
+      "type": "string",
+      "enum": ["terminal", "output_idle", "observation_timeout"]
+    },
+    "observationResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reason": { "$ref": "models.schema.json#/$defs/observationReason" },
+        "observation": { "$ref": "models.schema.json#/$defs/jobObservation" },
+        "output": { "$ref": "models.schema.json#/$defs/outputChunk" }
+      },
+      "required": ["reason", "observation", "output"],
+      "oneOf": [
+        {
+          "properties": {
+            "reason": { "type": "string", "const": "terminal" },
+            "observation": {
+              "type": "object",
+              "properties": {
+                "job": { "type": "object", "properties": { "status": { "$ref": "models.schema.json#/$defs/terminalStatus" } } }
+              }
+            },
+            "output": { "type": "object", "properties": { "eof": { "type": "boolean", "const": true } } }
+          }
+        },
+        {
+          "properties": {
+            "reason": { "type": "string", "enum": ["output_idle", "observation_timeout"] },
+            "observation": {
+              "type": "object",
+              "properties": {
+                "job": { "type": "object", "properties": { "status": { "type": "string", "const": "running" } } }
+              }
+            },
+            "output": { "type": "object", "properties": { "eof": { "type": "boolean", "const": false } } }
+          }
+        }
+      ]
     },
     "jobObservation": {
       "type": "object", "additionalProperties": false,
