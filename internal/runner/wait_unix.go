@@ -49,7 +49,7 @@ func (manager *Manager) PrepareWait(ctx context.Context, request WaitRequest) (p
 				if snapshotErr != nil {
 					return nil, snapshotErr
 				}
-					return newPreparedWait(manager, request, observation, snapshotCursor, time.Now(), absoluteDeadline), nil
+				return newPreparedWait(manager, request, observation, snapshotCursor, time.Now(), absoluteDeadline), nil
 			}
 			return nil, err
 		}
@@ -82,7 +82,7 @@ func (manager *Manager) PrepareWait(ctx context.Context, request WaitRequest) (p
 				idleDeadline = returnedAt.Add(idle)
 				continue
 			}
-				return newPreparedWait(manager, request, observation, resolved, returnedAt, absoluteDeadline), nil
+			return newPreparedWait(manager, request, observation, resolved, returnedAt, absoluteDeadline), nil
 		}
 		pause := min(manager.config.PollInterval, time.Until(absoluteDeadline), time.Until(idleDeadline))
 		timer := time.NewTimer(max(pause, time.Millisecond))

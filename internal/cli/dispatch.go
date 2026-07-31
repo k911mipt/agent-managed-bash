@@ -109,7 +109,7 @@ func (application *Application) dispatchRun(
 	}
 	return dispatchResult{
 		response: generated.RunResponse{Action: "run", Ok: true, Result: preparedObservation(prepared), SchemaVersion: 1},
-		warning: warning, afterWrite: prepared.Commit,
+		warning:  warning, afterWrite: prepared.Commit,
 	}, nil
 }
 
