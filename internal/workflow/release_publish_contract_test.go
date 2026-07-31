@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -28,6 +29,51 @@ func Test_ReleaseWorkflow_stages_and_finalizes_through_separate_release_approval
 	for _, name := range []string{"Attest Linux amd64 SBOM", "Attest Linux arm64 SBOM", "Attest Darwin amd64 SBOM", "Attest Darwin arm64 SBOM", "Attest npm SBOM"} {
 		require.Equal(t, attestAction, scalarValue(t, stepByName(t, stage, name), "uses"))
 	}
+}
+
+func Test_ReleaseWorkflow_scopes_oidc_and_npm_publication_to_the_release_environment(t *testing.T) {
+	// Given
+	workflow := loadWorkflow(t, "release.yml")
+	jobs := mappingValue(t, workflow, "jobs")
+	_, workflowOIDC := mappingValueIfPresent(mappingValue(t, workflow, "permissions"), "id-token")
+	_, workflowCredential := mappingValueIfPresent(mappingValue(t, workflow, "env"), "NPM_TOKEN")
+
+	// When
+	oidcJobs := make([]string, 0, 1)
+	publicationJobs := make([]string, 0, 1)
+	credentialJobs := make([]string, 0, 1)
+	for index := 0; index < len(jobs.Content); index += 2 {
+		name := jobs.Content[index].Value
+		workflowJob := jobs.Content[index+1]
+		if environment, exists := mappingValueIfPresent(workflowJob, "env"); exists {
+			_, jobCredential := mappingValueIfPresent(environment, "NPM_TOKEN")
+			require.Falsef(t, jobCredential, "job %s must not inherit npm credentials", name)
+		}
+		if permissions, exists := mappingValueIfPresent(workflowJob, "permissions"); exists {
+			if idToken, exists := mappingValueIfPresent(permissions, "id-token"); exists && idToken.Value == "write" {
+				oidcJobs = append(oidcJobs, name)
+				require.Equal(t, "release", scalarValue(t, workflowJob, "environment"))
+			}
+		}
+		steps := mappingValue(t, workflowJob, "steps")
+		for _, step := range steps.Content {
+			if run, exists := mappingValueIfPresent(step, "run"); exists && strings.Contains(run.Value, "release-publish.ts stage") {
+				publicationJobs = append(publicationJobs, name)
+			}
+			if environment, exists := mappingValueIfPresent(step, "env"); exists {
+				if _, exists := mappingValueIfPresent(environment, "NPM_TOKEN"); exists {
+					credentialJobs = append(credentialJobs, name)
+				}
+			}
+		}
+	}
+
+	// Then
+	require.False(t, workflowOIDC)
+	require.False(t, workflowCredential)
+	require.Equal(t, []string{"stage-release"}, oidcJobs)
+	require.Equal(t, []string{"stage-release"}, publicationJobs)
+	require.Equal(t, []string{"stage-release"}, credentialJobs)
 }
 
 func Test_ReleaseWorkflow_scopes_read_delay_to_publication_jobs(t *testing.T) {

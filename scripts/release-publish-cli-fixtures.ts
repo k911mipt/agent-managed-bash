@@ -35,6 +35,7 @@ export async function setupPublication(root: string): Promise<Readonly<Record<st
   await mkdir(bin)
   await writeFile(state, "{}")
   const fake = `#!/usr/bin/env bun
+import { resolve } from "node:path"
 const [kind, ...arguments_] = Bun.argv.slice(2)
 const statePath = process.env.FAKE_RELEASE_STATE
 const state = JSON.parse(await Bun.file(statePath).text())
@@ -48,6 +49,7 @@ const npmBundle = () => {
   const integrity = state.npm.dist.integrity
   const sha512 = Buffer.from(integrity.slice("sha512-".length), "base64").toString("hex")
   const npmPredicate = predicate()
+  delete npmPredicate.buildDefinition.internalParameters.github.runner_environment
   npmPredicate.runDetails.builder.id = state.npmBuilder ?? "https://github.com/actions/runner/github-hosted"
   return { attestations: [{ bundle: statement("https://slsa.dev/provenance/v1", npmPredicate, [{ digest: { sha512 }, name: state.npmPurl ?? \`pkg:npm/%40k911mipt/opencode-agent-managed-bash@\${process.env.RELEASE_VERSION}\` }]), predicateType: "https://slsa.dev/provenance/v1" }] }
 }
@@ -55,7 +57,7 @@ if (kind === "npm") {
   const args = arguments_[0] === "--prefix" ? arguments_.slice(2) : arguments_
   if (args[0] === "view") { if (state.npm === undefined || state.npmDelay > 0) { if (state.npmDelay > 0) { state.npmDelay -= 1; await save() }; console.error("E404"); process.exit(1) }; console.log(JSON.stringify(state.npm)); process.exit(0) }
   if (args[0] === "install") { state.npmInstallCount = (state.npmInstallCount ?? 0) + 1; await save(); process.exit(0) }
-  if (args[0] === "publish") { if (state.npmPublishExitCode !== undefined) { console.error(state.npmPublishStderr ?? "publish failed"); process.exit(state.npmPublishExitCode) }; const bytes = await Bun.file(args[1]).arrayBuffer(); const integrity = \`sha512-\${new Bun.CryptoHasher("sha512").update(bytes).digest("base64")}\`; state.npm = { name: packageName, version: process.env.RELEASE_VERSION, dist: { attestations: { provenance: { url: state.npmBundleURL ?? "https://registry.test/npm-provenance" } }, integrity } }; state.npmBundle = npmBundle(); state.npmDelay = state.npmDelayOnPublish ?? 0; await save(); if (state.ambiguous === "npm-publish") process.exit(1); process.exit(0) }
+  if (args[0] === "publish") { if (state.npmPublishExitCode !== undefined) { console.error(state.npmPublishStderr ?? "publish failed"); process.exit(state.npmPublishExitCode) }; const bytes = await Bun.file(args[1]).arrayBuffer(); const integrity = \`sha512-\${new Bun.CryptoHasher("sha512").update(bytes).digest("base64")}\`; state.npm = { name: packageName, version: process.env.RELEASE_VERSION, dist: { attestations: { provenance: { url: state.npmBundleURL ?? "https://registry.test/npm-provenance" } }, integrity } }; state.npmBundle = npmBundle(); state.npmTarballPath = args[1]; state.npmDelay = state.npmDelayOnPublish ?? 0; await save(); if (state.ambiguous === "npm-publish") process.exit(1); process.exit(0) }
   if (args[0] === "audit") { if (state.npm === undefined) process.exit(1); console.log(JSON.stringify({ invalid: state.npmInvalid ?? [], missing: state.npmMissing ?? [] })); process.exit(state.npmAuditExitCode ?? 0) }
 }
 if (kind === "curl") { const url = arguments_.at(-1); if (url !== state.npm?.dist?.attestations?.provenance?.url) process.exit(2); console.log(JSON.stringify(state.npmBundle)); process.exit(0) }
@@ -65,7 +67,21 @@ if (kind === "gh") {
   if (arguments_[0] === "release" && arguments_[1] === "upload") { const path = arguments_.at(-1); state.release.assets.push({ name: path.split("/").at(-1), digest: \`sha256:\${new Bun.CryptoHasher("sha256").update(await Bun.file(path).arrayBuffer()).digest("hex")}\` }); await save(); if (state.ambiguous === "release-upload") process.exit(1); process.exit(0) }
   if (arguments_[0] === "release" && arguments_[1] === "edit") { state.release.isDraft = false; state.release.isImmutable = true; await save(); if (state.ambiguous === "release-edit") process.exit(1); process.exit(0) }
   if (arguments_[0] === "api") { const digest = arguments_[1].split("sha256:").at(-1); console.log(JSON.stringify({ attestations: state.attestations?.[digest] ?? [] })); process.exit(0) }
-    if (arguments_[0] === "attestation" && arguments_[1] === "verify") { if (state.requiredPredicateType !== undefined && arguments_[arguments_.indexOf("--predicate-type") + 1] !== state.requiredPredicateType) process.exit(1); process.exit(state.attestationVerifyExitCode ?? 0) }
+  if (arguments_[0] === "attestation" && arguments_[1] === "verify") {
+    if (state.requiredPredicateType !== undefined && arguments_[arguments_.indexOf("--predicate-type") + 1] !== state.requiredPredicateType) process.exit(1)
+    if (arguments_.includes("--format")) {
+      const bundleIndex = arguments_.indexOf("--bundle")
+      if (resolve(arguments_[2]) !== state.npmTarballPath || bundleIndex < 0 || arguments_.lastIndexOf("--bundle") !== bundleIndex || JSON.stringify(JSON.parse(await Bun.file(arguments_[bundleIndex + 1]).text())) !== JSON.stringify(state.npmVerifierBundle ?? state.npmBundle.attestations[0].bundle)) process.exit(1)
+      const ref = \`refs/tags/\${process.env.RELEASE_TAG}\`
+      const signer = \`https://github.com/\${process.env.RELEASE_REPOSITORY}/.github/workflows/release.yml@\${ref}\`
+      const required = { "--cert-oidc-issuer": "https://token.actions.githubusercontent.com", "--digest-alg": "sha512", "--format": "json", "--predicate-type": "https://slsa.dev/provenance/v1", "--repo": process.env.RELEASE_REPOSITORY, "--signer-workflow": \`\${process.env.RELEASE_REPOSITORY}/.github/workflows/release.yml\`, "--source-digest": process.env.RELEASE_COMMIT, "--source-ref": ref }
+      if (!arguments_.includes("--deny-self-hosted-runners") || Object.entries(required).some(([name, value]) => arguments_[arguments_.indexOf(name) + 1] !== value)) process.exit(1)
+      const invocation = \`https://github.com/\${process.env.RELEASE_REPOSITORY}/actions/runs/789/attempts/1\`
+      const certificate = { buildConfigDigest: process.env.RELEASE_COMMIT, buildConfigURI: signer, buildSignerDigest: process.env.RELEASE_COMMIT, buildSignerURI: signer, githubWorkflowRef: ref, githubWorkflowRepository: process.env.RELEASE_REPOSITORY, githubWorkflowSHA: process.env.RELEASE_COMMIT, issuer: "https://token.actions.githubusercontent.com", runInvocationURI: invocation, runnerEnvironment: "github-hosted", sourceRepositoryDigest: process.env.RELEASE_COMMIT, sourceRepositoryRef: ref, sourceRepositoryURI: \`https://github.com/\${process.env.RELEASE_REPOSITORY}\`, subjectAlternativeName: signer, ...state.npmCertificate }
+      console.log(JSON.stringify([{ verificationResult: { signature: { certificate } } }]))
+    }
+    process.exit(state.attestationVerifyExitCode ?? 0)
+  }
 }
 process.exit(2)
 `
