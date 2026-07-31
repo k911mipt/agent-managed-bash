@@ -86,11 +86,11 @@ tar -cf "$stage/workspace-before.tar" -C "$preserved_workspace" .managed_bash
 
 running_workspace="$stage/running-workspace"
 mkdir -p "$running_workspace"
-run_request=$(printf '{"schema_version":1,"action":"run","context":{"session_id":"package","workspace_path":"%s","cwd":"%s"},"payload":{"command":"while [ ! -f %s/release ]; do :; done; printf survived"}}' "$running_workspace" "$running_workspace" "$running_workspace")
+run_request=$(printf '{"schema_version":1,"action":"start","context":{"session_id":"package","workspace_path":"%s","cwd":"%s"},"payload":{"command":"while [ ! -f %s/release ]; do :; done; printf survived"}}' "$running_workspace" "$running_workspace" "$running_workspace")
 (
 	cd "$running_workspace"
 	printf '%s' "$run_request" | env $install_env MANAGED_BASH_HOST_SESSION_ID=package MANAGED_BASH_HOST_WORKSPACE_PATH="$running_workspace" \
-		"$installed" run >"$stage/running.stdout"
+		"$installed" start >"$stage/running.stdout"
 )
 running_job_id=$(OUTPUT_PATH="$stage/running.stdout" bun -e '
 const response = JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text())
