@@ -1,10 +1,10 @@
 import { appendFile, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { parseStrictJSON, readJSON, regularBytes } from "./release-candidate-data"
+import { canonicalizeJSON, parseStrictJSON, readJSON, regularBytes } from "./release-candidate-data"
 import { readCandidateControl, validateCandidateControl } from "./release-candidate-control"
 import { validateReleaseCandidate } from "./release-candidate-manifest"
-import { assertSLSANpmProvenance, attestationState, provenancePredicateType, statementFromBundle } from "./release-publish-attestation"
+import { assertNpmCertificateVerification, assertSLSANpmProvenance, attestationState, provenancePredicateType, statementFromBundle } from "./release-publish-attestation"
 import { candidateFromControl, releasePublication } from "./release-publish-core"
 import type { JSONRecord, PublicationAsset, PublicationCandidate } from "./release-publish-runtime"
 import { command, environment, expectedSRI, mutateThenRead, option, readCommand, record, ReleasePublicationError, string } from "./release-publish-runtime"
@@ -45,7 +45,7 @@ async function auditNpm(npm: string, version: string): Promise<void> {
   }
 }
 
-async function verifyNpmBundle(candidate: PublicationCandidate, dist: JSONRecord, expected: string): Promise<void> {
+async function verifyNpmBundle(candidate: PublicationCandidate, dist: JSONRecord, tarball: PublicationAsset & { readonly integrity: string }): Promise<void> {
   const url = npmProvenanceURL(dist)
   const result = await command("curl", ["--fail", "--location", "--proto", "=https", "--proto-redir", "=https", "--silent", "--show-error", url])
   if (result.exitCode !== 0) throw new ReleasePublicationError("npm provenance bundle retrieval failed")
@@ -53,10 +53,21 @@ async function verifyNpmBundle(candidate: PublicationCandidate, dist: JSONRecord
   if (!Array.isArray(response["attestations"])) throw new ReleasePublicationError("invalid npm provenance bundle response")
   const matches = response["attestations"].map((value) => record(value, "npm provenance attestation")).filter((value) => string(value["predicateType"], "npm provenance predicate type") === provenancePredicateType)
   if (matches.length !== 1) throw new ReleasePublicationError("invalid npm provenance bundle")
-  const statement = statementFromBundle(record(matches[0], "npm provenance attestation")["bundle"])
-  const subject = statement.subjects[0]
-  if (subject === undefined || statement.subjects.length !== 1 || subject.name !== `pkg:npm/%40k911mipt/opencode-agent-managed-bash@${candidate.version}` || subject.digest["sha512"] !== sha512Digest(expected) || Object.keys(subject.digest).length !== 1) throw new ReleasePublicationError("npm provenance subject mismatch")
-  assertSLSANpmProvenance(statement, candidate)
+  const bundle = record(matches[0], "npm provenance attestation")["bundle"]
+  const root = await mkdtemp(join(tmpdir(), "agent-managed-bash-npm-bundle-"))
+  try {
+    const path = join(root, "bundle.json")
+    await writeFile(path, `${canonicalizeJSON(bundle)}\n`)
+    const ref = `refs/tags/${candidate.tag}`
+    const verified = await command("gh", ["attestation", "verify", tarball.path, "--repo", candidate.repository, "--bundle", path, "--predicate-type", provenancePredicateType, "--digest-alg", "sha512", "--signer-workflow", `${candidate.repository}/.github/workflows/release.yml`, "--source-ref", ref, "--source-digest", candidate.commit, "--deny-self-hosted-runners", "--cert-oidc-issuer", "https://token.actions.githubusercontent.com", "--format", "json"])
+    if (verified.exitCode !== 0) throw new ReleasePublicationError("npm provenance certificate verification failed")
+    const statement = statementFromBundle(bundle)
+    const subject = statement.subjects[0]
+    if (subject === undefined || statement.subjects.length !== 1 || subject.name !== `pkg:npm/%40k911mipt/opencode-agent-managed-bash@${candidate.version}` || subject.digest["sha512"] !== sha512Digest(tarball.integrity) || Object.keys(subject.digest).length !== 1) throw new ReleasePublicationError("npm provenance subject mismatch")
+    assertNpmCertificateVerification(parseStrictJSON(verified.stdout), candidate, assertSLSANpmProvenance(statement, candidate))
+  } finally {
+    await rm(root, { force: true, recursive: true })
+  }
 }
 
 async function readNpm(candidate: PublicationCandidate, npm: string, tarball: PublicationAsset): Promise<void> {
@@ -69,7 +80,7 @@ async function readNpm(candidate: PublicationCandidate, npm: string, tarball: Pu
   const expected = expectedSRI(await regularBytes(tarball.path))
   if (string(packageValue["name"], "npm name") !== "@k911mipt/opencode-agent-managed-bash" || string(packageValue["version"], "npm version") !== candidate.version || string(dist["integrity"], "npm integrity") !== expected) throw new ReleasePublicationError("npm SRI mismatch")
   await auditNpm(npm, candidate.version)
-  await verifyNpmBundle(candidate, dist, expected)
+  await verifyNpmBundle(candidate, dist, { ...tarball, integrity: expected })
 }
 
 async function reconcileNpm(candidate: PublicationCandidate, npm: string, bootstrapRequested: boolean, bootstrapAllowed: boolean): Promise<void> {

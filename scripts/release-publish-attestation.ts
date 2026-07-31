@@ -59,29 +59,48 @@ function exactSubject(subject: Subject, asset: Asset): boolean {
   return subject.name === asset.name && subject.digest["sha256"] === asset.sha256 && Object.keys(subject.digest).length === 1
 }
 
-function assertSLSAProvenance(statement: Statement, candidate: Candidate, builder: string): void {
+function assertSLSAProvenance(statement: Statement, candidate: Candidate, builder: string): string {
   if (statement.predicateType !== provenancePredicateType) throw new Error("invalid provenance predicate")
   const predicate = record(statement.predicate, "provenance predicate")
   const build = record(predicate["buildDefinition"], "provenance build definition")
   const workflow = record(record(build["externalParameters"], "provenance external parameters")["workflow"], "provenance workflow")
   const ref = `refs/tags/${candidate.tag}`
   if (requiredString(workflow["repository"], "provenance repository") !== `https://github.com/${candidate.repository}` || requiredString(workflow["path"], "provenance workflow path") !== ".github/workflows/release.yml" || requiredString(workflow["ref"], "provenance ref") !== ref) throw new Error("provenance workflow claims mismatch")
-  const github = record(record(build["internalParameters"], "provenance internal parameters")["github"], "provenance GitHub parameters")
-  if (requiredString(github["runner_environment"], "provenance runner environment") !== "github-hosted") throw new Error("provenance environment mismatch")
   const dependencies = build["resolvedDependencies"]
   if (!Array.isArray(dependencies) || dependencies.length !== 1) throw new Error("invalid provenance dependencies")
   const dependency = record(dependencies[0], "provenance dependency")
   if (requiredString(dependency["uri"], "provenance dependency URI") !== `git+https://github.com/${candidate.repository}@${ref}` || requiredString(record(dependency["digest"], "provenance dependency digest")["gitCommit"], "provenance SHA") !== candidate.commit) throw new Error("provenance dependency claims mismatch")
   const run = record(predicate["runDetails"], "provenance run details")
-  if (requiredString(record(run["builder"], "provenance builder")["id"], "provenance builder ID") !== builder || !requiredString(record(run["metadata"], "provenance metadata")["invocationId"], "provenance invocation ID").startsWith(`https://github.com/${candidate.repository}/actions/runs/`)) throw new Error("provenance run claims mismatch")
+  const invocation = requiredString(record(run["metadata"], "provenance metadata")["invocationId"], "provenance invocation ID")
+  if (requiredString(record(run["builder"], "provenance builder")["id"], "provenance builder ID") !== builder || !invocation.startsWith(`https://github.com/${candidate.repository}/actions/runs/`)) throw new Error("provenance run claims mismatch")
+  return invocation
 }
 
 export function assertSLSAWorkflowProvenance(statement: Statement, candidate: Candidate): void {
   assertSLSAProvenance(statement, candidate, `https://github.com/${candidate.repository}/.github/workflows/release.yml@refs/tags/${candidate.tag}`)
+  const build = record(record(statement.predicate, "provenance predicate")["buildDefinition"], "provenance build definition")
+  const github = record(record(build["internalParameters"], "provenance internal parameters")["github"], "provenance GitHub parameters")
+  if (requiredString(github["runner_environment"], "provenance runner environment") !== "github-hosted") throw new Error("provenance environment mismatch")
 }
 
-export function assertSLSANpmProvenance(statement: Statement, candidate: Candidate): void {
-  assertSLSAProvenance(statement, candidate, "https://github.com/actions/runner/github-hosted")
+export function assertSLSANpmProvenance(statement: Statement, candidate: Candidate): string {
+  return assertSLSAProvenance(statement, candidate, "https://github.com/actions/runner/github-hosted")
+}
+
+export function assertNpmCertificateVerification(value: unknown, candidate: Candidate, invocation: string): void {
+  if (!Array.isArray(value) || value.length !== 1) throw new Error("invalid npm certificate verification")
+  const verification = record(record(value[0], "npm certificate verification")["verificationResult"], "npm verification result")
+  const certificate = record(record(verification["signature"], "npm verification signature")["certificate"], "npm verification certificate")
+  const ref = `refs/tags/${candidate.tag}`
+  const signer = `https://github.com/${candidate.repository}/.github/workflows/release.yml@${ref}`
+  const expected = {
+    buildConfigDigest: candidate.commit, buildConfigURI: signer, buildSignerDigest: candidate.commit, buildSignerURI: signer,
+    githubWorkflowRef: ref, githubWorkflowRepository: candidate.repository, githubWorkflowSHA: candidate.commit,
+    issuer: "https://token.actions.githubusercontent.com", runInvocationURI: invocation, runnerEnvironment: "github-hosted",
+    sourceRepositoryDigest: candidate.commit, sourceRepositoryRef: ref, sourceRepositoryURI: `https://github.com/${candidate.repository}`,
+    subjectAlternativeName: signer,
+  }
+  if (Object.entries(expected).some(([field, expectedValue]) => requiredString(certificate[field], `npm certificate ${field}`) !== expectedValue)) throw new Error("npm certificate claims mismatch")
 }
 
 async function verifiedStatements(asset: Asset, candidate: Candidate, command: Command): Promise<readonly VerifiedStatement[]> {

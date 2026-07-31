@@ -189,6 +189,10 @@ describe("release publication fake CLI surface", () => {
     { name: "encoded scoped slash", npmPurl: `pkg:npm/%40k911mipt%2fopencode-agent-managed-bash@${fixtureVersion}` },
     { name: "workflow builder", npmBuilder: `https://github.com/k911mipt/agent-managed-bash/.github/workflows/release.yml@refs/tags/v${fixtureVersion}` },
     { name: "wrong hosted builder", npmBuilder: "https://github.com/actions/runner/self-hosted" },
+    { name: "wrong verifier bundle", npmVerifierBundle: {} },
+    { name: "self-hosted certificate", npmCertificate: { runnerEnvironment: "self-hosted" } },
+    { name: "wrong certificate source", npmCertificate: { sourceRepositoryDigest: "f".repeat(40) } },
+    { name: "unrelated certificate invocation", npmCertificate: { runInvocationURI: "https://github.com/other/repository/actions/runs/789/attempts/1" } },
   ]) {
     test(`rejects npm publication conflict: ${testCase.name}`, async () => {
       // Given
@@ -216,13 +220,13 @@ describe("release publication fake CLI surface", () => {
 
     try {
       expect((await runPublication(arguments_, environment)).exitCode).toBe(0)
-      expect((await readdir(temporaryDirectory)).filter((name) => name.startsWith("agent-managed-bash-attestation-")).length).toBe(0)
+      expect((await readdir(temporaryDirectory)).filter((name) => name.startsWith("agent-managed-bash-attestation-") || name.startsWith("agent-managed-bash-npm-bundle-")).length).toBe(0)
       const state = JSON.parse(await readFile(fakeStatePath(environment), "utf8"))
       state.attestationVerifyExitCode = 1
       await writeFile(fakeStatePath(environment), JSON.stringify(state))
       await addExactAttestations(root, environment)
       expect((await runPublication(["finalize", "--candidate", join(root, "candidate"), "--control", join(root, "control", "CANDIDATE-RECEIPT.json")], environment)).exitCode).not.toBe(0)
-      expect((await readdir(temporaryDirectory)).filter((name) => name.startsWith("agent-managed-bash-attestation-")).length).toBe(0)
+      expect((await readdir(temporaryDirectory)).filter((name) => name.startsWith("agent-managed-bash-attestation-") || name.startsWith("agent-managed-bash-npm-bundle-")).length).toBe(0)
     } finally { await rm(root, { force: true, recursive: true }) }
   })
 
