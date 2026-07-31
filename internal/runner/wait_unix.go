@@ -49,7 +49,7 @@ func (manager *Manager) PrepareWait(ctx context.Context, request WaitRequest) (p
 				if snapshotErr != nil {
 					return nil, snapshotErr
 				}
-				return newPreparedWait(manager, request, observation, snapshotCursor, time.Now()), nil
+					return newPreparedWait(manager, request, observation, snapshotCursor, time.Now(), absoluteDeadline), nil
 			}
 			return nil, err
 		}
@@ -82,7 +82,7 @@ func (manager *Manager) PrepareWait(ctx context.Context, request WaitRequest) (p
 				idleDeadline = returnedAt.Add(idle)
 				continue
 			}
-			return newPreparedWait(manager, request, observation, resolved, returnedAt), nil
+				return newPreparedWait(manager, request, observation, resolved, returnedAt, absoluteDeadline), nil
 		}
 		pause := min(manager.config.PollInterval, time.Until(absoluteDeadline), time.Until(idleDeadline))
 		timer := time.NewTimer(max(pause, time.Millisecond))
@@ -100,17 +100,35 @@ func (manager *Manager) PrepareWait(ctx context.Context, request WaitRequest) (p
 	}
 }
 
-func newPreparedWait(manager *Manager, request WaitRequest, observation generated.OutputObservation, _ generated.ByteCursor, now time.Time) *PreparedWait {
+func newPreparedWait(
+	manager *Manager,
+	request WaitRequest,
+	observation generated.OutputObservation,
+	_ generated.ByteCursor,
+	now time.Time,
+	absoluteDeadline time.Time,
+) *PreparedWait {
 	updatedAt := generated.TimestampUnixMs(now.UnixMilli())
 	updatedAt = max(updatedAt, observation.Observation.Job.CreatedAtUnixMs)
 	if finished := observation.Observation.Job.FinishedAtUnixMs; finished != nil {
 		updatedAt = min(updatedAt, *finished)
 	}
 	return &PreparedWait{
-		Observation: observation, manager: manager, invocation: request.Invocation,
+		Observation: observation, Reason: observationReason(observation, now, absoluteDeadline),
+		manager: manager, invocation: request.Invocation,
 		jobID: request.JobID, cursor: observation.Output.NextCursorBytes, updatedAt: updatedAt,
 		output: observation.Output,
 	}
+}
+
+func observationReason(observation generated.OutputObservation, now, absoluteDeadline time.Time) generated.ObservationReason {
+	if observation.Observation.Job.Status != generated.JobStatusRunning {
+		return generated.ObservationReasonTerminal
+	}
+	if !now.Before(absoluteDeadline) {
+		return generated.ObservationReasonObservationTimeout
+	}
+	return generated.ObservationReasonOutputIdle
 }
 
 func (store *Store) waitSnapshot(jobID generated.JobID, sessionID generated.SessionID, explicit *generated.ByteCursor) (generated.OutputObservation, generated.ByteCursor, error) {

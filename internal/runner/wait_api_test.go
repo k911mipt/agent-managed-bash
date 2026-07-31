@@ -41,6 +41,9 @@ func Test_Manager_wait_idle_and_absolute_checkpoints_never_terminate_job(t *test
 
 	// Then
 	require.NoError(t, absoluteErr)
+	require.Equal(t, generated.ObservationReasonOutputIdle, idle.Reason)
+	require.Equal(t, generated.ObservationReasonOutputIdle, repeated.Reason)
+	require.Equal(t, generated.ObservationReasonObservationTimeout, absolute.Reason)
 	require.Empty(t, idle.Observation.Output.Text)
 	require.Empty(t, repeated.Observation.Output.Text)
 	require.Empty(t, absolute.Observation.Output.Text)
@@ -52,6 +55,26 @@ func Test_Manager_wait_idle_and_absolute_checkpoints_never_terminate_job(t *test
 	require.Nil(t, status.ProcessResult)
 	_, err = manager.Cancel(context.Background(), runner.CancelRequest{Invocation: owner, JobID: job.JobID})
 	require.NoError(t, err)
+}
+
+func Test_Manager_wait_reports_terminal_reason_for_completed_job(t *testing.T) {
+	// Given
+	workspace := runner.NewTestWorkspace(t)
+	manager := newControlManager(t)
+	owner := trustedInvocationFor(t, "owner", workspace)
+	job := startControlJob(t, manager, owner, "printf done")
+	waitForTerminal(t, newStoreForInvocation(t, owner), job.JobID, time.Second)
+
+	// When
+	prepared, err := manager.PrepareWait(context.Background(), runner.WaitRequest{
+		Invocation: owner, JobID: job.JobID, Timeout: 500 * time.Millisecond, IdleTimeout: 20 * time.Millisecond,
+	})
+
+	// Then
+	require.NoError(t, err)
+	require.Equal(t, generated.ObservationReasonTerminal, prepared.Reason)
+	require.Equal(t, generated.JobStatusSucceeded, prepared.Observation.Observation.Job.Status)
+	require.Equal(t, "done", prepared.Observation.Output.Text)
 }
 
 func Test_Manager_wait_delivers_output_and_commits_cursor_monotonically(t *testing.T) {

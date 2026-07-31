@@ -45,6 +45,7 @@ type RemoveRequest struct {
 
 type PreparedWait struct {
 	Observation generated.OutputObservation
+	Reason      generated.ObservationReason
 
 	mu         sync.Mutex
 	manager    *Manager
