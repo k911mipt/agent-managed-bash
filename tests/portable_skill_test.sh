@@ -8,7 +8,7 @@ dispatcher="$skill/scripts/managed-bash"
 test -x "$dispatcher"
 command -v tmux >/dev/null 2>&1 || { printf '%s\n' 'portable skill tests require tmux on PATH' >&2; exit 1; }
 "$dispatcher" --help >"${TMPDIR:-/tmp}/managed-bash-help-$$"
-grep -F 'run|wait|status|output|cancel|remove|list|version' "${TMPDIR:-/tmp}/managed-bash-help-$$" >/dev/null
+grep -F 'start|run|wait|status|output|cancel|remove|list|version' "${TMPDIR:-/tmp}/managed-bash-help-$$" >/dev/null
 rm -f "${TMPDIR:-/tmp}/managed-bash-help-$$"
 
 validate_response() {
@@ -47,10 +47,11 @@ test "$(cat "$stage/cli-request.json")" = '{"schema_version":1,"action":"version
 
 complex_command='printf '\''line one\nline "two"'\'''
 FAKE_CLI_REQUEST="$stage/cli-run-request.json" COMPLEX_COMMAND="$complex_command" PATH="$fake_bin:$PATH" \
-	"$dispatcher" run -- "$complex_command" >"$stage/cli-run.stdout" 2>"$stage/cli-run.stderr"
+	"$dispatcher" run --timeout-ms 300 --idle-timeout-ms 100 -- "$complex_command" >"$stage/cli-run.stdout" 2>"$stage/cli-run.stderr"
 REQUEST_PATH="$stage/cli-run-request.json" COMPLEX_COMMAND="$complex_command" bun -e '
 const request = JSON.parse(await Bun.file(process.env.REQUEST_PATH).text())
 if (request.action !== "run" || request.payload.command !== process.env.COMPLEX_COMMAND) process.exit(1)
+if (request.payload.timeout_ms !== 300 || request.payload.idle_timeout_ms !== 100) process.exit(1)
 '
 
 for command in awk cat date dirname grep mktemp rm sed sleep tmux tr uname wc; do
@@ -82,14 +83,15 @@ run_tmux_as() {
 	)
 }
 
-run_tmux run --hard-timeout-ms 5000 -- "printf 'portable-output\\n'" >"$stage/run.stdout" 2>"$stage/run.stderr"
+run_tmux run --hard-timeout-ms 5000 --timeout-ms 5000 --idle-timeout-ms 5000 -- "printf 'portable-output\\n'" >"$stage/run.stdout" 2>"$stage/run.stderr"
 validate_response "$stage/run.stdout"
 grep -F 'backend=tmux' "$stage/run.stderr" >/dev/null
 job_id=$(OUTPUT_PATH="$stage/run.stdout" bun -e '
 const response = JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text())
 if (!response.ok || response.action !== "run") process.exit(1)
-if (response.result.status !== "running" && response.result.status !== "succeeded") process.exit(1)
-process.stdout.write(response.result.job_id)
+if (response.result.reason !== "terminal" || response.result.observation.job.status !== "succeeded") process.exit(1)
+if (!response.result.output.text.includes("portable-output")) process.exit(1)
+process.stdout.write(response.result.observation.job.job_id)
 ')
 
 run_tmux wait "$job_id" --timeout-ms 5000 --idle-timeout-ms 5000 >"$stage/wait.stdout" 2>"$stage/wait.stderr"
@@ -144,7 +146,7 @@ const response = JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text())
 if (!response.ok || response.result.jobs.length !== 0) process.exit(1)
 '
 
-run_tmux run --hard-timeout-ms 10000 -- 'sleep 30' >"$stage/cancel-run.stdout" 2>"$stage/cancel-run.stderr"
+run_tmux start --hard-timeout-ms 10000 -- 'sleep 30' >"$stage/cancel-run.stdout" 2>"$stage/cancel-run.stderr"
 cancel_job=$(OUTPUT_PATH="$stage/cancel-run.stdout" bun -e '
 const response = JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text())
 process.stdout.write(response.result.job_id)
@@ -183,7 +185,7 @@ if (!response.ok || response.result.observation.job.status !== "cancelled") proc
 '
 run_tmux remove "$cancel_job" >/dev/null 2>"$stage/cancel-remove.stderr"
 
-run_tmux run --hard-timeout-ms 1000 -- 'sleep 30' >"$stage/timeout-run.stdout" 2>"$stage/timeout-run.stderr"
+run_tmux start --hard-timeout-ms 1000 -- 'sleep 30' >"$stage/timeout-run.stdout" 2>"$stage/timeout-run.stderr"
 timeout_job=$(OUTPUT_PATH="$stage/timeout-run.stdout" bun -e '
 const response = JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text())
 process.stdout.write(response.result.job_id)
@@ -198,7 +200,7 @@ run_tmux remove "$timeout_job" >/dev/null 2>"$stage/timeout-remove.stderr"
 test ! -e "$workspace/.managed_bash"
 
 run_tmux run -- 'exit 7' >"$stage/nonzero-run.stdout" 2>"$stage/nonzero-run.stderr"
-nonzero_job=$(OUTPUT_PATH="$stage/nonzero-run.stdout" bun -e 'process.stdout.write(JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text()).result.job_id)')
+nonzero_job=$(OUTPUT_PATH="$stage/nonzero-run.stdout" bun -e 'process.stdout.write(JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text()).result.observation.job.job_id)')
 run_tmux wait "$nonzero_job" --timeout-ms 5000 --idle-timeout-ms 5000 >"$stage/nonzero-wait.stdout" 2>"$stage/nonzero-wait.stderr"
 validate_response "$stage/nonzero-wait.stdout"
 OUTPUT_PATH="$stage/nonzero-wait.stdout" bun -e '
@@ -208,7 +210,7 @@ if (response.result.observation.job.status !== "nonzero_exit" || response.result
 run_tmux remove "$nonzero_job" >/dev/null 2>"$stage/nonzero-remove.stderr"
 
 run_tmux run -- 'kill -TERM $$' >"$stage/signal-run.stdout" 2>"$stage/signal-run.stderr"
-signal_job=$(OUTPUT_PATH="$stage/signal-run.stdout" bun -e 'process.stdout.write(JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text()).result.job_id)')
+signal_job=$(OUTPUT_PATH="$stage/signal-run.stdout" bun -e 'process.stdout.write(JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text()).result.observation.job.job_id)')
 run_tmux wait "$signal_job" --timeout-ms 5000 --idle-timeout-ms 5000 >"$stage/signal-wait.stdout" 2>"$stage/signal-wait.stderr"
 validate_response "$stage/signal-wait.stdout"
 OUTPUT_PATH="$stage/signal-wait.stdout" bun -e '
@@ -219,7 +221,7 @@ if (response.result.observation.process_result.signal !== 15) process.exit(1)
 run_tmux remove "$signal_job" >/dev/null 2>"$stage/signal-remove.stderr"
 
 run_tmux run -- "printf 'Pane is dead (status 0, command output)'" >"$stage/banner-run.stdout" 2>"$stage/banner-run.stderr"
-banner_job=$(OUTPUT_PATH="$stage/banner-run.stdout" bun -e 'process.stdout.write(JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text()).result.job_id)')
+banner_job=$(OUTPUT_PATH="$stage/banner-run.stdout" bun -e 'process.stdout.write(JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text()).result.observation.job.job_id)')
 run_tmux wait "$banner_job" --timeout-ms 5000 --idle-timeout-ms 5000 >"$stage/banner-wait.stdout" 2>"$stage/banner-wait.stderr"
 OUTPUT_PATH="$stage/banner-wait.stdout" bun -e '
 const response = JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text())
@@ -229,7 +231,7 @@ run_tmux remove "$banner_job" >/dev/null 2>"$stage/banner-remove.stderr"
 
 large_command='index=1; while [ "$index" -le 260 ]; do printf "line-%03d\n" "$index"; index=$((index + 1)); done'
 run_tmux run -- "$large_command" >"$stage/large-run.stdout" 2>"$stage/large-run.stderr"
-large_job=$(OUTPUT_PATH="$stage/large-run.stdout" bun -e 'process.stdout.write(JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text()).result.job_id)')
+large_job=$(OUTPUT_PATH="$stage/large-run.stdout" bun -e 'process.stdout.write(JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text()).result.observation.job.job_id)')
 run_tmux wait "$large_job" --timeout-ms 5000 --idle-timeout-ms 5000 >"$stage/large-wait.stdout" 2>"$stage/large-wait.stderr"
 validate_response "$stage/large-wait.stdout"
 OUTPUT_PATH="$stage/large-wait.stdout" bun -e '

@@ -30,7 +30,7 @@ type Application struct {
 	validator *protocol.Validator
 }
 
-const usage = "usage: managed-bash <run|wait|status|output|cancel|remove|list|version>"
+const usage = "usage: managed-bash <start|run|wait|status|output|cancel|remove|list|version>"
 
 func New(config Config) (*Application, error) {
 	if config.BinaryVersion == "" {
@@ -103,7 +103,7 @@ func parseAction(args []string) (generated.Action, bool) {
 
 func knownAction(raw string) (generated.Action, bool) {
 	switch generated.Action(raw) {
-	case generated.ActionRun, generated.ActionWait, generated.ActionStatus, generated.ActionOutput,
+	case generated.ActionStart, generated.ActionRun, generated.ActionWait, generated.ActionStatus, generated.ActionOutput,
 		generated.ActionCancel, generated.ActionRemove, generated.ActionList, generated.ActionVersion:
 		return generated.Action(raw), true
 	default:

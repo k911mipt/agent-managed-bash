@@ -8,6 +8,7 @@ test("wait output reports the persisted cursor interval", () => {
     ok: true,
     action: "wait",
     result: {
+      reason: "output_idle",
       observation: {
         job: {
           job_id: "job-1",
@@ -38,6 +39,7 @@ test("wait output reports the persisted cursor interval", () => {
     throw new TypeError("expected structured tool result")
   }
   expect(result.output).toContain("cursor 10→20/20")
+  expect(result.output).toContain("output idle checkpoint")
 })
 
 test("preserves exactly 200 newline-terminated output lines", () => {
@@ -90,6 +92,7 @@ function waitResponse(text: string): Response {
     ok: true,
     action: "wait",
     result: {
+      reason: "output_idle",
       observation: {
         job: {
           job_id: "job-1",

@@ -12,6 +12,7 @@ type requestValue interface {
 	assertedContext() (generated.TrustedContext, bool)
 }
 
+type startRequest struct{ generated.StartRequest }
 type runRequest struct{ generated.RunRequest }
 type waitRequest struct{ generated.WaitRequest }
 type statusRequest struct{ generated.StatusRequest }
@@ -21,6 +22,7 @@ type removeRequest struct{ generated.RemoveRequest }
 type listRequest struct{ generated.ListRequest }
 type versionRequest struct{ generated.VersionRequest }
 
+func (startRequest) action() generated.Action  { return generated.ActionStart }
 func (runRequest) action() generated.Action    { return generated.ActionRun }
 func (waitRequest) action() generated.Action   { return generated.ActionWait }
 func (statusRequest) action() generated.Action { return generated.ActionStatus }
@@ -32,6 +34,9 @@ func (versionRequest) action() generated.Action {
 	return generated.ActionVersion
 }
 
+func (request startRequest) assertedContext() (generated.TrustedContext, bool) {
+	return request.Context, true
+}
 func (request runRequest) assertedContext() (generated.TrustedContext, bool) {
 	return request.Context, true
 }
@@ -59,6 +64,12 @@ func (versionRequest) assertedContext() (generated.TrustedContext, bool) {
 
 func decodeValidatedRequest(action generated.Action, raw []byte) (requestValue, error) {
 	switch action {
+	case generated.ActionStart:
+		var request generated.StartRequest
+		if err := json.Unmarshal(raw, &request); err != nil {
+			return nil, decodeValidatedRequestError(err)
+		}
+		return startRequest{request}, nil
 	case generated.ActionRun:
 		var request generated.RunRequest
 		if err := json.Unmarshal(raw, &request); err != nil {

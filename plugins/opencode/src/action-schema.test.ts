@@ -9,6 +9,7 @@ describe("managed_bash action schema", () => {
       command: "printf ok",
       idle_timeout_ms: 500,
     }
+    const start = { action: "start", command: "printf ok" }
     const waitWithIdleTimeout = {
       action: "wait",
       job_id: "job-1",
@@ -17,13 +18,15 @@ describe("managed_bash action schema", () => {
 
     // When
     const runResult = managedBashActionSchema.safeParse(runWithIdleTimeout)
+    const startResult = managedBashActionSchema.safeParse(start)
     const waitResult = managedBashActionSchema.safeParse(waitWithIdleTimeout)
 
     // Then
-    expect(managedBashToolArgs.command.description).toStartWith("[run only]")
-    expect(managedBashToolArgs.idle_timeout_ms.description).toStartWith("[wait only]")
+    expect(managedBashToolArgs.command.description).toStartWith("[start/run only]")
+    expect(managedBashToolArgs.idle_timeout_ms.description).toStartWith("[run/wait only]")
     expect(managedBashToolArgs.start_cursor_bytes.description).toStartWith("[output only]")
-    expect(runResult.success).toBeFalse()
+    expect(startResult.success).toBeTrue()
+    expect(runResult.success).toBeTrue()
     expect(waitResult.success).toBeTrue()
   })
 })

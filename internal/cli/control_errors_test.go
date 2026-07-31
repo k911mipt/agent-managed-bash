@@ -13,7 +13,7 @@ import (
 func Test_Application_rejects_active_remove_then_cancels_job(t *testing.T) {
 	// Given
 	harness := newLifecycleHarness(t)
-	jobID := harness.runJob(t, "sleep 30")
+	jobID := harness.startJob(t, "sleep 30")
 	remove := generated.RemoveRequest{
 		Action: "remove", Context: harness.context, Payload: generated.JobReference{JobID: jobID}, SchemaVersion: 1,
 	}
@@ -44,7 +44,7 @@ func Test_Application_rejects_active_remove_then_cancels_job(t *testing.T) {
 func Test_Application_status_returns_corrupt_state_for_invalid_persisted_job(t *testing.T) {
 	// Given
 	harness := newLifecycleHarness(t)
-	jobID := harness.runJob(t, "printf ok")
+	jobID := harness.startJob(t, "printf ok")
 	harness.waitForTerminal(t, jobID, generated.JobStatusSucceeded)
 	statePath := filepath.Join(harness.client.workspace, ".managed_bash", "jobs", string(jobID), "state.json")
 	require.NoError(t, os.WriteFile(statePath, []byte(`{}`), 0o600))

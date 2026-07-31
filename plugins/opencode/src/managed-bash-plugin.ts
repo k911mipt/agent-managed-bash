@@ -16,6 +16,7 @@ import type { Response, TrustedContext } from "./generated/protocol.gen"
 import { formatExecutionError } from "./managed-bash-error"
 import { deletedSessionID } from "./managed-bash-event"
 import { requestFor, trustedContextFor } from "./managed-bash-request"
+import { createSessionRegistry, type TrackedJob } from "./managed-bash-session-registry"
 import { formatProtocolResponse, formatToolError } from "./presentation"
 import { managedBashReleaseVersion } from "./release-version"
 import { createResponseValidator } from "./response-validator"
@@ -31,31 +32,13 @@ export type ManagedBashControllerOptions = {
   readonly pluginVersion?: string
 }
 
-type TrackedJob = {
-  readonly jobID: string
-  readonly context: TrustedContext
-}
-
-type SessionState = {
-  readonly jobs: Map<string, TrackedJob>
-  readonly pendingRuns: Set<Promise<void>>
-  closing: boolean
-}
-
-type PendingRun = {
-  readonly state: SessionState
-  finish(): void
-}
-
 export async function createManagedBashController(
   options: ManagedBashControllerOptions = {},
 ): Promise<ManagedBashController> {
   const validateResponse = createResponseValidator()
   const executor = options.executor ?? createBunCliExecutor()
   const pluginVersion = options.pluginVersion ?? managedBashReleaseVersion
-  const closedSessionIDs = new Set<string>()
-  const sessions = new Map<string, SessionState>()
-  let disposed = false
+  const sessionRegistry = createSessionRegistry()
   let versionHandshake: Promise<void> | undefined
 
   async function execute(input: unknown, context: ToolContext): Promise<ToolResult> {
@@ -69,8 +52,8 @@ export async function createManagedBashController(
       title: `managed_bash ${action.action}`,
       metadata: { call_id: context.messageID, session_id: context.sessionID },
     })
-    if (action.action === "run") {
-      return executeRun(action, context)
+    if (action.action === "start" || action.action === "run") {
+      return executeLaunch(action, context)
     }
 
     try {
@@ -89,8 +72,8 @@ export async function createManagedBashController(
     }
   }
 
-  async function executeRun(
-    action: Extract<ManagedBashAction, { action: "run" }>,
+  async function executeLaunch(
+    action: Extract<ManagedBashAction, { action: "start" | "run" }>,
     context: ToolContext,
   ): Promise<ToolResult> {
     await context.ask({
@@ -100,11 +83,11 @@ export async function createManagedBashController(
       metadata: { command: action.command },
     })
     if (context.abort.aborted) {
-      return formatToolError("runner_aborted", "run was aborted before launch")
+      return formatToolError("runner_aborted", `${action.action} was aborted before launch`)
     }
 
-    const pendingRun = beginRun(context.sessionID)
-    if (pendingRun === undefined) {
+    const pendingLaunch = sessionRegistry.begin(context.sessionID, action.action === "run")
+    if (pendingLaunch === undefined) {
       return formatToolError("runner_aborted", "session is closing")
     }
 
@@ -114,18 +97,21 @@ export async function createManagedBashController(
       const response = await executeProtocolRequest(
         executor,
         requestFor(action, trustedContext),
-        new AbortController().signal,
+        AbortSignal.any([context.abort, pendingLaunch.signal]),
         validateResponse,
       )
-      trackRun(response, trustedContext, pendingRun.state)
-      if (context.abort.aborted && response.ok && response.action === "run") {
-        await cancelTrackedJob({ jobID: response.result.job_id, context: trustedContext })
+      const tracked = trackedJobFromResponse(response, trustedContext)
+      if (tracked !== undefined) {
+        pendingLaunch.track(tracked)
+      }
+      if (context.abort.aborted && tracked !== undefined) {
+        await cancelTrackedJob(tracked)
       }
       return formatProtocolResponse(response)
     } catch (error: unknown) { // no-excuse-ok: catch — formatExecutionError owns exhaustive narrowing.
       return formatExecutionError(error)
     } finally {
-      pendingRun.finish()
+      pendingLaunch.finish()
     }
   }
 
@@ -163,24 +149,20 @@ export async function createManagedBashController(
     }
   }
 
-  function trackRun(response: Response, context: TrustedContext, state: SessionState): void {
-    if (!response.ok || response.action !== "run") {
-      return
+  function trackedJobFromResponse(response: Response, context: TrustedContext): TrackedJob | undefined {
+    const jobID = response.ok
+      ? response.action === "start"
+        ? response.result.job_id
+        : response.action === "run"
+          ? response.result.observation.job.job_id
+          : undefined
+      : response.action === "run"
+        ? response.job?.job_id
+        : undefined
+    if (jobID === undefined) {
+      return undefined
     }
-
-    state.jobs.set(response.result.job_id, { jobID: response.result.job_id, context })
-  }
-
-  async function cancelSession(sessionID: string): Promise<void> {
-    closedSessionIDs.add(sessionID)
-    const state = sessions.get(sessionID)
-    if (state === undefined) {
-      return
-    }
-    state.closing = true
-    await Promise.allSettled([...state.pendingRuns])
-    await Promise.allSettled([...state.jobs.values()].map((job) => cancelTrackedJob(job)))
-    sessions.delete(sessionID)
+    return { jobID, context }
   }
 
   async function cancelTrackedJob(job: TrackedJob): Promise<void> {
@@ -203,52 +185,23 @@ export async function createManagedBashController(
     }
   }
 
-  function beginRun(sessionID: string): PendingRun | undefined {
-    if (disposed || closedSessionIDs.has(sessionID)) {
-      return undefined
-    }
-    const state = sessions.get(sessionID) ?? {
-      jobs: new Map<string, TrackedJob>(),
-      pendingRuns: new Set<Promise<void>>(),
-      closing: false,
-    }
-    sessions.set(sessionID, state)
-    if (state.closing) {
-      return undefined
-    }
-
-    let resolve: (() => void) | undefined
-    const completion = new Promise<void>((complete) => {
-      resolve = complete
-    })
-    state.pendingRuns.add(completion)
-    return {
-      state,
-      finish() {
-        state.pendingRuns.delete(completion)
-        resolve?.()
-      },
-    }
-  }
-
   return {
     execute,
     async handleEvent(event) {
       const sessionID = deletedSessionID(event)
       if (sessionID !== undefined) {
-        await cancelSession(sessionID)
+        await sessionRegistry.close(sessionID, cancelTrackedJob)
       }
     },
     async dispose() {
-      disposed = true
-      await Promise.allSettled([...sessions.keys()].map((sessionID) => cancelSession(sessionID)))
+      await sessionRegistry.dispose(cancelTrackedJob)
     },
   }
 }
 
 export function createManagedBashTool(controller: ManagedBashController): ToolDefinition {
   return tool({
-    description: "Run and observe cancellable managed shell jobs. run starts jobs; wait owns observation timeouts.",
+    description: "Run and observe cancellable managed shell jobs. run observes until terminal or checkpoint; start detaches immediately.",
     args: managedBashToolArgs,
     execute: (input, context) => controller.execute(input, context),
   })

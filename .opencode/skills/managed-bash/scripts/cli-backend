@@ -22,24 +22,30 @@ case $action in
 		[ "$#" -eq 0 ] || die_usage 'version accepts no arguments'
 		request='{"schema_version":1,"action":"version"}'
 		;;
-	run)
+	start|run)
 		hard_timeout=
 		output_limit=
+		timeout=
+		idle_timeout=
 		while [ "$#" -gt 0 ] && [ "$1" != -- ]; do
 			case $1 in
 				--hard-timeout-ms) [ "$#" -ge 2 ] || die_usage '--hard-timeout-ms requires a value'; require_positive_bounded hard_timeout_ms "$2" 86400000; hard_timeout=$2; shift 2 ;;
 				--output-limit-bytes) [ "$#" -ge 2 ] || die_usage '--output-limit-bytes requires a value'; require_positive_bounded output_limit_bytes "$2" 104857600; output_limit=$2; shift 2 ;;
-				*) die_usage "unsupported run argument: $1" ;;
+				--timeout-ms) [ "$action" = run ] || die_usage '--timeout-ms is supported only by run'; [ "$#" -ge 2 ] || die_usage '--timeout-ms requires a value'; require_positive_bounded timeout_ms "$2" 86400000; timeout=$2; shift 2 ;;
+				--idle-timeout-ms) [ "$action" = run ] || die_usage '--idle-timeout-ms is supported only by run'; [ "$#" -ge 2 ] || die_usage '--idle-timeout-ms requires a value'; require_positive_bounded idle_timeout_ms "$2" 86400000; idle_timeout=$2; shift 2 ;;
+				*) die_usage "unsupported $action argument: $1" ;;
 			esac
 		done
-		[ "${1-}" = -- ] || die_usage 'run requires -- followed by one command string'
+		[ "${1-}" = -- ] || die_usage "$action requires -- followed by one command string"
 		shift
-		[ "$#" -eq 1 ] || die_usage 'run requires exactly one command string after --'
+		[ "$#" -eq 1 ] || die_usage "$action requires exactly one command string after --"
 		require_command "$1"
 		payload="{\"command\":$(json_quote "$1")"
 		[ -z "$hard_timeout" ] || payload="$payload,\"hard_timeout_ms\":$hard_timeout"
 		[ -z "$output_limit" ] || payload="$payload,\"output_limit_bytes\":$output_limit"
-		request="{\"schema_version\":1,\"action\":\"run\",\"context\":$context,\"payload\":$payload}}"
+		[ -z "$timeout" ] || payload="$payload,\"timeout_ms\":$timeout"
+		[ -z "$idle_timeout" ] || payload="$payload,\"idle_timeout_ms\":$idle_timeout"
+		request="{\"schema_version\":1,\"action\":\"$action\",\"context\":$context,\"payload\":$payload}}"
 		;;
 	wait)
 		[ "$#" -ge 1 ] || die_usage 'wait requires a job ID'

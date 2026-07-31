@@ -14,6 +14,7 @@ type IsExact<Left, Right> =
 type RequiredKeys<Value> = {
   [Key in keyof Value]-?: Record<never, never> extends Pick<Value, Key> ? never : Key
 }[keyof Value]
+type StartRequest = Extract<Request, { action: "start" }>
 type RunRequest = Extract<Request, { action: "run" }>
 type WaitRequest = Extract<Request, { action: "wait" }>
 type StatusRequest = Extract<Request, { action: "status" }>
@@ -23,6 +24,7 @@ type RemoveRequest = Extract<Request, { action: "remove" }>
 type ListRequest = Extract<Request, { action: "list" }>
 type VersionRequest = Extract<Request, { action: "version" }>
 type ErrorResponse = Extract<Response, { ok: false }>
+type StartResponse = Extract<Response, { action: "start" }>
 type RunResponse = Extract<Response, { action: "run" }>
 type StatusResponse = Extract<Response, { action: "status" }>
 type WaitResponse = Extract<Response, { action: "wait" }>
@@ -34,6 +36,9 @@ type VersionResponse = Extract<Response, { action: "version" }>
 
 export type GeneratedRunCommandIsTyped = Assert<
   IsExact<RunRequest["payload"]["command"], string>
+>
+export type GeneratedStartFieldsAreRequired = Assert<
+  IsExact<RequiredKeys<StartRequest>, "schema_version" | "action" | "context" | "payload">
 >
 export type GeneratedRunCommandIsNotAny = Assert<
   IsAny<RunRequest["payload"]["command"]> extends false ? true : false
@@ -64,6 +69,9 @@ export type GeneratedVersionFieldsAreRequired = Assert<
 >
 export type GeneratedRunResponseFieldsAreRequired = Assert<
   IsExact<RequiredKeys<RunResponse>, "schema_version" | "ok" | "action" | "result">
+>
+export type GeneratedStartResponseFieldsAreRequired = Assert<
+  IsExact<RequiredKeys<StartResponse>, "schema_version" | "ok" | "action" | "result">
 >
 export type GeneratedWaitResponseFieldsAreRequired = Assert<
   IsExact<RequiredKeys<WaitResponse>, "schema_version" | "ok" | "action" | "result">
@@ -96,10 +104,10 @@ export type GeneratedExitClassIsExact = Assert<
   IsExact<ExitClassContract["exit_class"], 0 | 2 | 3 | 4 | 5>
 >
 export type GeneratedRequestActionsAreComplete = Assert<
-  IsExact<Request["action"], "run" | "wait" | "status" | "output" | "cancel" | "remove" | "list" | "version">
+  IsExact<Request["action"], "start" | "run" | "wait" | "status" | "output" | "cancel" | "remove" | "list" | "version">
 >
 export type GeneratedResponseActionsAreComplete = Assert<
-  IsExact<Exclude<Response["action"], undefined>, "run" | "wait" | "status" | "output" | "cancel" | "remove" | "list" | "version">
+  IsExact<Exclude<Response["action"], undefined>, "start" | "run" | "wait" | "status" | "output" | "cancel" | "remove" | "list" | "version">
 >
 export type GeneratedStateFieldsAreRequired = Assert<
   PersistedJobState extends {
@@ -130,6 +138,8 @@ export type GeneratedOutputObservationIsTyped = Assert<
 
 export function requestSubject(request: Request): string {
   switch (request.action) {
+    case "start":
+      return request.payload.command
     case "run":
       return request.payload.command
     case "wait":

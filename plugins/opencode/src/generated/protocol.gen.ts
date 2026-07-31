@@ -2,6 +2,7 @@
 
 export type Protocol = Request | Response | PersistedJobState
 export type Request =
+  | StartRequest
   | RunRequest
   | WaitRequest
   | StatusRequest
@@ -11,6 +12,7 @@ export type Request =
   | ListRequest
   | VersionRequest
 export type Response =
+  | StartResponse
   | RunResponse
   | WaitResponse
   | StatusResponse
@@ -20,6 +22,41 @@ export type Response =
   | ListResponse
   | VersionResponse
   | ErrorResponse
+export type ObservationResult = {
+  reason: "terminal" | "output_idle" | "observation_timeout"
+  observation: JobObservation
+  output: OutputChunk
+} & (
+  | {
+      reason?: "terminal"
+      observation?: {
+        job?: {
+          status?:
+            | "succeeded"
+            | "nonzero_exit"
+            | "signal_exit"
+            | "cancelled"
+            | "hard_timeout"
+            | "output_limit"
+            | "runner_lost"
+        }
+      }
+      output?: {
+        eof?: true
+      }
+    }
+  | {
+      reason?: "output_idle" | "observation_timeout"
+      observation?: {
+        job?: {
+          status?: "running"
+        }
+      }
+      output?: {
+        eof?: false
+      }
+    }
+)
 export type JobObservation = {
   job: JobMetadata
   process_result?: ProcessResult
@@ -254,21 +291,34 @@ export type PersistedJobState = {
     }
 )
 
-export interface RunRequest {
+export interface StartRequest {
   schema_version: 1
-  action: "run"
+  action: "start"
   context: TrustedContext
-  payload: RunPayload
+  payload: StartPayload
 }
 export interface TrustedContext {
   session_id: string
   workspace_path: string
   cwd: string
 }
+export interface StartPayload {
+  command: string
+  hard_timeout_ms?: number
+  output_limit_bytes?: number
+}
+export interface RunRequest {
+  schema_version: 1
+  action: "run"
+  context: TrustedContext
+  payload: RunPayload
+}
 export interface RunPayload {
   command: string
   hard_timeout_ms?: number
   output_limit_bytes?: number
+  timeout_ms?: number
+  idle_timeout_ms?: number
 }
 export interface WaitRequest {
   schema_version: 1
@@ -323,10 +373,10 @@ export interface VersionRequest {
   schema_version: 1
   action: "version"
 }
-export interface RunResponse {
+export interface StartResponse {
   schema_version: 1
   ok: true
-  action: "run"
+  action: "start"
   result: JobMetadata
 }
 export interface JobMetadata {
@@ -351,15 +401,11 @@ export interface JobMetadata {
   hard_timeout_ms: number
   output_limit_bytes: number
 }
-export interface WaitResponse {
+export interface RunResponse {
   schema_version: 1
   ok: true
-  action: "wait"
-  result: OutputObservation
-}
-export interface OutputObservation {
-  observation: JobObservation
-  output: OutputChunk
+  action: "run"
+  result: ObservationResult
 }
 export interface OutputChunk {
   text: string
@@ -367,6 +413,12 @@ export interface OutputChunk {
   next_cursor_bytes: number
   captured_bytes: number
   eof: boolean
+}
+export interface WaitResponse {
+  schema_version: 1
+  ok: true
+  action: "wait"
+  result: ObservationResult
 }
 export interface StatusResponse {
   schema_version: 1
@@ -379,6 +431,10 @@ export interface OutputResponse {
   ok: true
   action: "output"
   result: OutputObservation
+}
+export interface OutputObservation {
+  observation: JobObservation
+  output: OutputChunk
 }
 export interface CancelResponse {
   schema_version: 1
@@ -426,8 +482,9 @@ export interface VersionData {
 export interface ErrorResponse {
   schema_version: 1
   ok: false
-  action?: "run" | "wait" | "status" | "output" | "cancel" | "remove" | "list" | "version"
+  action?: "start" | "run" | "wait" | "status" | "output" | "cancel" | "remove" | "list" | "version"
   error: ProtocolError
+  job?: JobMetadata
 }
 export interface ProtocolError {
   code:

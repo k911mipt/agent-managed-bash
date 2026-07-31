@@ -3,6 +3,7 @@
   "$id": "https://agent-managed-bash.dev/schema/v1/response.schema.json",
   "title": "Response",
   "oneOf": [
+    { "$ref": "#/$defs/startResponse" },
     { "$ref": "#/$defs/runResponse" },
     { "$ref": "#/$defs/waitResponse" },
     { "$ref": "#/$defs/statusResponse" },
@@ -14,11 +15,19 @@
     { "$ref": "#/$defs/errorResponse" }
   ],
   "$defs": {
+    "startResponse": {
+      "title": "StartResponse", "type": "object", "additionalProperties": false,
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 }, "ok": { "type": "boolean", "const": true },
+        "action": { "type": "string", "const": "start" }, "result": { "$ref": "models.schema.json#/$defs/jobMetadata" }
+      },
+      "required": ["schema_version", "ok", "action", "result"]
+    },
     "runResponse": {
       "title": "RunResponse", "type": "object", "additionalProperties": false,
       "properties": {
         "schema_version": { "type": "integer", "const": 1 }, "ok": { "type": "boolean", "const": true },
-        "action": { "type": "string", "const": "run" }, "result": { "$ref": "models.schema.json#/$defs/jobMetadata" }
+        "action": { "type": "string", "const": "run" }, "result": { "$ref": "models.schema.json#/$defs/observationResult" }
       },
       "required": ["schema_version", "ok", "action", "result"]
     },
@@ -26,7 +35,7 @@
       "title": "WaitResponse", "type": "object", "additionalProperties": false,
       "properties": {
         "schema_version": { "type": "integer", "const": 1 }, "ok": { "type": "boolean", "const": true },
-        "action": { "type": "string", "const": "wait" }, "result": { "$ref": "models.schema.json#/$defs/outputObservation" }
+        "action": { "type": "string", "const": "wait" }, "result": { "$ref": "models.schema.json#/$defs/observationResult" }
       },
       "required": ["schema_version", "ok", "action", "result"]
     },
@@ -82,9 +91,17 @@
       "title": "ErrorResponse", "type": "object", "additionalProperties": false,
       "properties": {
         "schema_version": { "type": "integer", "const": 1 }, "ok": { "type": "boolean", "const": false },
-        "action": { "$ref": "models.schema.json#/$defs/action" }, "error": { "$ref": "models.schema.json#/$defs/protocolError" }
+        "action": { "$ref": "models.schema.json#/$defs/action" },
+        "error": { "$ref": "models.schema.json#/$defs/protocolError" },
+        "job": { "$ref": "models.schema.json#/$defs/jobMetadata" }
       },
-      "required": ["schema_version", "ok", "error"]
+      "required": ["schema_version", "ok", "error"],
+      "dependentSchemas": {
+        "job": {
+          "properties": { "action": { "type": "string", "const": "run" } },
+          "required": ["action"]
+        }
+      }
     }
   }
 }

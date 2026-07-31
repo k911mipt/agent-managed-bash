@@ -12,9 +12,14 @@ import (
 func Test_Application_executes_complete_managed_job_lifecycle(t *testing.T) {
 	// Given
 	harness := newLifecycleHarness(t)
+	timeout := generated.TimeoutMs(5000)
+	idle := generated.TimeoutMs(5000)
 	run := generated.RunRequest{
 		Action: string(generated.ActionRun), Context: harness.context,
-		Payload:       generated.RunPayload{Command: `test -z "${MANAGED_BASH_HOST_SESSION_ID:-}" && test -z "${MANAGED_BASH_HOST_WORKSPACE_PATH:-}" && printf hello`},
+		Payload: generated.RunPayload{
+			Command:   `test -z "${MANAGED_BASH_HOST_SESSION_ID:-}" && test -z "${MANAGED_BASH_HOST_WORKSPACE_PATH:-}" && printf hello`,
+			TimeoutMs: &timeout, IdleTimeoutMs: &idle,
+		},
 		SchemaVersion: 1,
 	}
 
@@ -26,12 +31,12 @@ func Test_Application_executes_complete_managed_job_lifecycle(t *testing.T) {
 	require.Empty(t, stderr)
 	var runResponse generated.RunResponse
 	require.NoError(t, json.Unmarshal([]byte(stdout), &runResponse))
-	require.Equal(t, generated.JobStatusRunning, runResponse.Result.Status)
-	jobID := runResponse.Result.JobID
+	require.Equal(t, generated.ObservationReasonTerminal, runResponse.Result.Reason)
+	require.Equal(t, generated.JobStatusSucceeded, runResponse.Result.Observation.Job.Status)
+	require.Equal(t, "hello", runResponse.Result.Output.Text)
+	jobID := runResponse.Result.Observation.Job.JobID
 
-	// When: wait
-	timeout := generated.TimeoutMs(5000)
-	idle := generated.TimeoutMs(5000)
+	// When: wait continues from the cursor delivered by run
 	wait := generated.WaitRequest{
 		Action: string(generated.ActionWait), Context: harness.context,
 		Payload:       generated.WaitPayload{JobID: jobID, TimeoutMs: &timeout, IdleTimeoutMs: &idle},
@@ -39,13 +44,14 @@ func Test_Application_executes_complete_managed_job_lifecycle(t *testing.T) {
 	}
 	exitCode, stdout, stderr = harness.client.execute(t, "wait", marshalRequest(t, wait))
 
-	// Then: terminal output was delivered
+	// Then: terminal output is not resent
 	require.Equal(t, 0, exitCode)
 	require.Empty(t, stderr)
 	var waitResponse generated.WaitResponse
 	require.NoError(t, json.Unmarshal([]byte(stdout), &waitResponse))
+	require.Equal(t, generated.ObservationReasonTerminal, waitResponse.Result.Reason)
 	require.Equal(t, generated.JobStatusSucceeded, waitResponse.Result.Observation.Job.Status)
-	require.Equal(t, "hello", waitResponse.Result.Output.Text)
+	require.Empty(t, waitResponse.Result.Output.Text)
 
 	harness.assertOutputBoundaries(t, jobID)
 	harness.assertStatusOutputListAndCancel(t, jobID)
@@ -63,6 +69,92 @@ func Test_Application_executes_complete_managed_job_lifecycle(t *testing.T) {
 	var removeResponse generated.RemoveResponse
 	require.NoError(t, json.Unmarshal([]byte(stdout), &removeResponse))
 	require.Equal(t, generated.RemoveResult{JobID: jobID, Removed: true}, removeResponse.Result)
+}
+
+func Test_Application_run_returns_nonzero_as_successful_terminal_observation(t *testing.T) {
+	// Given
+	harness := newLifecycleHarness(t)
+	timeout := generated.TimeoutMs(5000)
+	idle := generated.TimeoutMs(5000)
+	request := generated.RunRequest{
+		Action: "run", Context: harness.context,
+		Payload:       generated.RunPayload{Command: "exit 7", TimeoutMs: &timeout, IdleTimeoutMs: &idle},
+		SchemaVersion: 1,
+	}
+
+	// When
+	exitCode, stdout, stderr := harness.client.execute(t, "run", marshalRequest(t, request))
+
+	// Then
+	require.Equal(t, 0, exitCode)
+	require.Empty(t, stderr)
+	var response generated.RunResponse
+	require.NoError(t, json.Unmarshal([]byte(stdout), &response))
+	require.Equal(t, generated.ObservationReasonTerminal, response.Result.Reason)
+	require.Equal(t, generated.JobStatusNonzeroExit, response.Result.Observation.Job.Status)
+	require.NotNil(t, response.Result.Observation.ProcessResult)
+	require.Equal(t, 7, *response.Result.Observation.ProcessResult.ExitCode)
+}
+
+func Test_Application_run_returns_output_idle_checkpoint_for_silent_job(t *testing.T) {
+	// Given
+	harness := newLifecycleHarness(t)
+	timeout := generated.TimeoutMs(500)
+	idle := generated.TimeoutMs(20)
+	request := generated.RunRequest{
+		Action: "run", Context: harness.context,
+		Payload:       generated.RunPayload{Command: "sleep 30", TimeoutMs: &timeout, IdleTimeoutMs: &idle},
+		SchemaVersion: 1,
+	}
+
+	// When
+	exitCode, stdout, stderr := harness.client.execute(t, "run", marshalRequest(t, request))
+
+	// Then
+	require.Equal(t, 0, exitCode)
+	require.Empty(t, stderr)
+	var response generated.RunResponse
+	require.NoError(t, json.Unmarshal([]byte(stdout), &response))
+	require.Equal(t, generated.ObservationReasonOutputIdle, response.Result.Reason)
+	require.Equal(t, generated.JobStatusRunning, response.Result.Observation.Job.Status)
+	cancelJob(t, harness, response.Result.Observation.Job.JobID)
+}
+
+func Test_Application_run_returns_observation_timeout_for_active_job(t *testing.T) {
+	// Given
+	harness := newLifecycleHarness(t)
+	timeout := generated.TimeoutMs(500)
+	idle := generated.TimeoutMs(5000)
+	request := generated.RunRequest{
+		Action: "run", Context: harness.context,
+		Payload: generated.RunPayload{
+			Command: "while :; do printf x; sleep 0.01; done", TimeoutMs: &timeout, IdleTimeoutMs: &idle,
+		},
+		SchemaVersion: 1,
+	}
+
+	// When
+	exitCode, stdout, stderr := harness.client.execute(t, "run", marshalRequest(t, request))
+
+	// Then
+	require.Equal(t, 0, exitCode)
+	require.Empty(t, stderr)
+	var response generated.RunResponse
+	require.NoError(t, json.Unmarshal([]byte(stdout), &response))
+	require.Equal(t, generated.ObservationReasonObservationTimeout, response.Result.Reason)
+	require.Equal(t, generated.JobStatusRunning, response.Result.Observation.Job.Status)
+	require.NotEmpty(t, response.Result.Output.Text)
+	cancelJob(t, harness, response.Result.Observation.Job.JobID)
+}
+
+func cancelJob(t *testing.T, harness lifecycleHarness, jobID generated.JobID) {
+	t.Helper()
+	request := generated.CancelRequest{
+		Action: "cancel", Context: harness.context,
+		Payload: generated.JobReference{JobID: jobID}, SchemaVersion: 1,
+	}
+	exitCode, _, _ := harness.client.execute(t, "cancel", marshalRequest(t, request))
+	require.Equal(t, 0, exitCode)
 }
 
 func (harness lifecycleHarness) assertOutputBoundaries(t *testing.T, jobID generated.JobID) {

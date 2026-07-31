@@ -38,16 +38,17 @@ func newLifecycleHarness(t *testing.T) lifecycleHarness {
 	}
 }
 
-func (harness lifecycleHarness) runJob(t *testing.T, command string) generated.JobID {
+func (harness lifecycleHarness) startJob(t *testing.T, command string) generated.JobID {
 	t.Helper()
-	request := generated.RunRequest{
-		Action: "run", Context: harness.context, Payload: generated.RunPayload{Command: command}, SchemaVersion: 1,
+	request := generated.StartRequest{
+		Action: "start", Context: harness.context, Payload: generated.StartPayload{Command: command}, SchemaVersion: 1,
 	}
-	exitCode, stdout, stderr := harness.client.execute(t, "run", marshalRequest(t, request))
+	exitCode, stdout, stderr := harness.client.execute(t, "start", marshalRequest(t, request))
 	require.Equal(t, 0, exitCode)
 	require.Empty(t, stderr)
-	var response generated.RunResponse
+	var response generated.StartResponse
 	require.NoError(t, json.Unmarshal([]byte(stdout), &response))
+	require.Equal(t, generated.JobStatusRunning, response.Result.Status)
 	return response.Result.JobID
 }
 

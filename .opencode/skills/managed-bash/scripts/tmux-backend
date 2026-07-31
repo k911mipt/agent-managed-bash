@@ -18,6 +18,40 @@ current_workspace=$(pwd -P)
 require_session_id "$current_owner"
 . "$script_dir/tmux-lib.sh"
 
+observe_job() {
+	job=$1
+	timeout=$2
+	idle_timeout=$3
+	started=$(date +%s)
+	last_change=$started
+	previous=$(capture_output "$job")
+	while [ "$(job_status "$job")" = running ]; do
+		now=$(date +%s)
+		current=$(capture_output "$job")
+		if [ "$current" != "$previous" ]; then previous=$current; last_change=$now; fi
+		[ $(((now - started) * 1000)) -lt "$timeout" ] || break
+		[ $(((now - last_change) * 1000)) -lt "$idle_timeout" ] || break
+		sleep 1
+	done
+	capture_job_snapshot "$job"
+	observation_deadline=$((started * 1000 + timeout))
+	idle_deadline=$((last_change * 1000 + idle_timeout))
+	if [ "$snapshot_status" != running ]; then
+		observation_reason=terminal
+	elif [ "$observation_deadline" -le "$idle_deadline" ]; then
+		observation_reason=observation_timeout
+	else
+		observation_reason=output_idle
+	fi
+}
+
+print_observation_response() {
+	response_action=$1
+	reason=$2
+	printf '{"schema_version":1,"ok":true,"action":%s,"result":{"reason":%s,"observation":%s,"output":%s}}\n' \
+		"$(json_quote "$response_action")" "$(json_quote "$reason")" "$(observation_snapshot_json)" "$(output_snapshot_json)"
+}
+
 case $action in
 	version)
 		[ "$#" -eq 0 ] || die_usage 'version accepts no arguments'
@@ -25,18 +59,22 @@ case $action in
 		printf '{"schema_version":1,"ok":true,"action":"version","result":{"product":"managed-bash","binary_version":%s,"protocol_version":1,"os":%s,"architecture":%s}}\n' \
 			"$(json_quote "tmux-$version")" "$(json_quote "$(portable_os)")" "$(json_quote "$(portable_arch)")"
 		;;
-	run)
+	start|run)
 		hard_timeout=7200000
+		timeout=300000
+		idle_timeout=120000
 		while [ "$#" -gt 0 ] && [ "$1" != -- ]; do
 			case $1 in
 				--hard-timeout-ms) [ "$#" -ge 2 ] || die_usage '--hard-timeout-ms requires a value'; require_positive_bounded hard_timeout_ms "$2" 86400000; hard_timeout=$2; shift 2 ;;
 				--output-limit-bytes) die_usage '--output-limit-bytes is unsupported by the tmux backend' ;;
-				*) die_usage "unsupported run argument: $1" ;;
+				--timeout-ms) [ "$action" = run ] || die_usage '--timeout-ms is supported only by run'; [ "$#" -ge 2 ] || die_usage '--timeout-ms requires a value'; require_positive_bounded timeout_ms "$2" 86400000; timeout=$2; shift 2 ;;
+				--idle-timeout-ms) [ "$action" = run ] || die_usage '--idle-timeout-ms is supported only by run'; [ "$#" -ge 2 ] || die_usage '--idle-timeout-ms requires a value'; require_positive_bounded idle_timeout_ms "$2" 86400000; idle_timeout=$2; shift 2 ;;
+				*) die_usage "unsupported $action argument: $1" ;;
 			esac
 		done
-		[ "${1-}" = -- ] || die_usage 'run requires -- followed by one command string'
+		[ "${1-}" = -- ] || die_usage "$action requires -- followed by one command string"
 		shift
-		[ "$#" -eq 1 ] || die_usage 'run requires exactly one command string after --'
+		[ "$#" -eq 1 ] || die_usage "$action requires exactly one command string after --"
 		command=$1
 		require_command "$command"
 		created=$(now_ms)
@@ -70,7 +108,12 @@ case $action in
 			if [ -n "$socket" ]; then timer_tmux="$(json_quote "$tmux_binary") -L $socket"; else timer_tmux=$(json_quote "$tmux_binary"); fi
 			tmux_command run-shell -b "sleep $seconds; if $timer_tmux has-session -t $job 2>/dev/null && [ -z \"\$($timer_tmux show-options -v -t $job @managed_bash_exit_code 2>/dev/null)\" ] && [ -z \"\$($timer_tmux show-options -v -t $job @managed_bash_reason 2>/dev/null)\" ] && [ \"\$($timer_tmux display-message -p -t $job -F '#{pane_dead}')\" = 0 ]; then $timer_tmux set-option -q -t $job @managed_bash_reason hard_timeout; pid=\$($timer_tmux display-message -p -t $job -F '#{pane_pid}'); kill -TERM \"\$pid\" 2>/dev/null || true; sleep 2; if [ \"\$($timer_tmux display-message -p -t $job -F '#{pane_dead}')\" = 0 ]; then kill -KILL \"\$pid\" 2>/dev/null || true; fi; fi"
 		fi
-		printf '{"schema_version":1,"ok":true,"action":"run","result":%s}\n' "$(job_json "$job")"
+		if [ "$action" = start ]; then
+			printf '{"schema_version":1,"ok":true,"action":"start","result":%s}\n' "$(job_json "$job")"
+		else
+			observe_job "$job" "$timeout" "$idle_timeout"
+			print_observation_response run "$observation_reason"
+		fi
 		;;
 	wait)
 		[ "$#" -ge 1 ] || die_usage 'wait requires a job ID'
@@ -92,19 +135,8 @@ case $action in
 			shift 2
 		done
 		require_job "$job"
-		start=$(date +%s)
-		last_change=$start
-		previous=$(capture_output "$job")
-		while [ "$(job_status "$job")" = running ]; do
-			now=$(date +%s)
-			current=$(capture_output "$job")
-			if [ "$current" != "$previous" ]; then previous=$current; last_change=$now; fi
-			[ $(((now - start) * 1000)) -lt "$timeout" ] || break
-			[ $(((now - last_change) * 1000)) -lt "$idle_timeout" ] || break
-			sleep 1
-		done
-		printf '{"schema_version":1,"ok":true,"action":"wait","result":{"observation":%s,"output":%s}}\n' \
-			"$(observation_json "$job")" "$(output_json "$job")"
+		observe_job "$job" "$timeout" "$idle_timeout"
+		print_observation_response wait "$observation_reason"
 		;;
 	status)
 		[ "$#" -eq 1 ] || die_usage 'status requires one job ID'
@@ -119,8 +151,9 @@ case $action in
 		shift
 		[ "$#" -eq 0 ] || die_usage "$1 is unsupported by the tmux backend"
 		require_job "$job"
+		capture_job_snapshot "$job"
 		printf '{"schema_version":1,"ok":true,"action":"output","result":{"observation":%s,"output":%s}}\n' \
-			"$(observation_json "$job")" "$(output_json "$job")"
+			"$(observation_snapshot_json)" "$(output_snapshot_json)"
 		;;
 	cancel)
 		[ "$#" -eq 1 ] || die_usage 'cancel requires one job ID'

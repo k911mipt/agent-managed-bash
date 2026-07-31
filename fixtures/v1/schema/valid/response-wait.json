@@ -1,6 +1,7 @@
 {
   "schema_version": 1, "ok": true, "action": "wait",
   "result": {
+    "reason": "output_idle",
     "observation": {
       "job": {
         "job_id": "job-1", "status": "running", "owner_session_id": "session-1",

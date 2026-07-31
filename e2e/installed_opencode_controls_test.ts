@@ -66,12 +66,12 @@ async function parallelCancelScenario(): Promise<void> {
   const secondCommand = "while [ ! -f release-second ]; do sleep 0.05; done; printf second-complete"
   const result = await executeScenario("parallel", [firstCommand, secondCommand], async (count, body, workspace) => {
     if (count === 1) return toolCalls([
-      { id: "run-first", input: { action: "run", command: firstCommand, hard_timeout_ms: 15_000 } },
-      { id: "run-second", input: { action: "run", command: secondCommand, hard_timeout_ms: 15_000 } },
+      { id: "start-first", input: { action: "start", command: firstCommand, hard_timeout_ms: 15_000 } },
+      { id: "start-second", input: { action: "start", command: secondCommand, hard_timeout_ms: 15_000 } },
     ])
-    const firstJob = extractJobID(body, "run-first")
-    const secondJob = extractJobID(body, "run-second")
-    requireCondition(firstJob !== undefined && secondJob !== undefined, "parallel: missing run job IDs")
+    const firstJob = extractJobID(body, "start-first")
+    const secondJob = extractJobID(body, "start-second")
+    requireCondition(firstJob !== undefined && secondJob !== undefined, "parallel: missing start job IDs")
     if (count === 2) {
       await waitForFile(join(workspace, "pids"))
       return toolCalls([
@@ -91,7 +91,7 @@ async function parallelCancelScenario(): Promise<void> {
     ])
     return textResponse("parallel controls complete")
   })
-  requireActionCounts(result, { run: 2, wait: 4, cancel: 1 })
+  requireActionCounts(result, { start: 2, wait: 4, cancel: 1 })
   const finishFirst = result.events.find((event) => event.callID === "finish-first")
   requireCondition(
     finishFirst?.output?.includes(": cancelled") === true,

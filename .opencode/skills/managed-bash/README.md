@@ -24,7 +24,7 @@ The skill installs nothing else. For fallback operation, `tmux` must already be 
 
 ## First Use
 
-Ask: `Run my long test in the background, wait until it becomes idle, and show me the latest output.`
+Ask: `Run my long test and show its output; return early if it becomes idle.` Use an explicit background start only when you need to control or observe the job separately.
 
 ## Runtime Docs
 

@@ -68,25 +68,21 @@ validate_response "$stage/cli-run.json"
 cli_job=$(OUTPUT_PATH="$stage/cli-run.json" bun -e '
 const response = JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text())
 if (!response.ok || response.action !== "run") process.exit(1)
-process.stdout.write(response.result.job_id)
+process.stdout.write(response.result.observation.job.job_id)
 ')
-run_cli wait "$cli_job" --timeout-ms 5000 --idle-timeout-ms 5000 >"$stage/cli-wait.json" 2>"$stage/cli-wait.stderr"
-validate_response "$stage/cli-wait.json"
 
 run_tmux run -- "$command" >"$stage/tmux-run.json" 2>"$stage/tmux-run.stderr"
 validate_response "$stage/tmux-run.json"
 tmux_job=$(OUTPUT_PATH="$stage/tmux-run.json" bun -e '
 const response = JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text())
 if (!response.ok || response.action !== "run") process.exit(1)
-process.stdout.write(response.result.job_id)
+process.stdout.write(response.result.observation.job.job_id)
 ')
-run_tmux wait "$tmux_job" --timeout-ms 5000 --idle-timeout-ms 5000 >"$stage/tmux-wait.json" 2>"$stage/tmux-wait.stderr"
-validate_response "$stage/tmux-wait.json"
 
-CLI_PATH="$stage/cli-wait.json" TMUX_PATH="$stage/tmux-wait.json" EXPECTED_STATUS="$expected_status" EXPECTED_OUTPUT="$expected_output" bun -e '
+CLI_PATH="$stage/cli-run.json" TMUX_PATH="$stage/tmux-run.json" EXPECTED_STATUS="$expected_status" EXPECTED_OUTPUT="$expected_output" bun -e '
 const normalize = async (path) => {
   const response = JSON.parse(await Bun.file(path).text())
-  if (!response.ok || response.action !== "wait") process.exit(1)
+  if (!response.ok || response.action !== "run" || response.result.reason !== "terminal") process.exit(1)
   return {
     status: response.result.observation.job.status,
     output: response.result.output.text,
@@ -143,13 +139,11 @@ nonzero_status=$(fixture_field 'nonzero exit' expected_status)
 nonzero_code=$(fixture_field 'nonzero exit' expected_exit_code)
 run_cli run -- "$nonzero_command" >"$stage/cli-nonzero-run.json" 2>"$stage/cli-nonzero-run.stderr"
 run_tmux run -- "$nonzero_command" >"$stage/tmux-nonzero-run.json" 2>"$stage/tmux-nonzero-run.stderr"
-cli_nonzero_job=$(OUTPUT_PATH="$stage/cli-nonzero-run.json" bun -e 'process.stdout.write(JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text()).result.job_id)')
-tmux_nonzero_job=$(OUTPUT_PATH="$stage/tmux-nonzero-run.json" bun -e 'process.stdout.write(JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text()).result.job_id)')
-run_cli wait "$cli_nonzero_job" --timeout-ms 5000 --idle-timeout-ms 5000 >"$stage/cli-nonzero-wait.json" 2>"$stage/cli-nonzero-wait.stderr"
-run_tmux wait "$tmux_nonzero_job" --timeout-ms 5000 --idle-timeout-ms 5000 >"$stage/tmux-nonzero-wait.json" 2>"$stage/tmux-nonzero-wait.stderr"
-validate_response "$stage/cli-nonzero-wait.json"
-validate_response "$stage/tmux-nonzero-wait.json"
-CLI_PATH="$stage/cli-nonzero-wait.json" TMUX_PATH="$stage/tmux-nonzero-wait.json" EXPECTED_STATUS="$nonzero_status" EXPECTED_CODE="$nonzero_code" bun -e '
+cli_nonzero_job=$(OUTPUT_PATH="$stage/cli-nonzero-run.json" bun -e 'process.stdout.write(JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text()).result.observation.job.job_id)')
+tmux_nonzero_job=$(OUTPUT_PATH="$stage/tmux-nonzero-run.json" bun -e 'process.stdout.write(JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text()).result.observation.job.job_id)')
+validate_response "$stage/cli-nonzero-run.json"
+validate_response "$stage/tmux-nonzero-run.json"
+CLI_PATH="$stage/cli-nonzero-run.json" TMUX_PATH="$stage/tmux-nonzero-run.json" EXPECTED_STATUS="$nonzero_status" EXPECTED_CODE="$nonzero_code" bun -e '
 const values = await Promise.all([process.env.CLI_PATH, process.env.TMUX_PATH].map(async (path) => JSON.parse(await Bun.file(path).text())))
 for (const response of values) {
   if (response.result.observation.job.status !== process.env.EXPECTED_STATUS) process.exit(1)
@@ -164,13 +158,11 @@ signal_status=$(fixture_field 'signal exit' expected_status)
 signal_number=$(fixture_field 'signal exit' expected_signal)
 run_cli run -- "$signal_command" >"$stage/cli-signal-run.json" 2>"$stage/cli-signal-run.stderr"
 run_tmux run -- "$signal_command" >"$stage/tmux-signal-run.json" 2>"$stage/tmux-signal-run.stderr"
-cli_signal_job=$(OUTPUT_PATH="$stage/cli-signal-run.json" bun -e 'process.stdout.write(JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text()).result.job_id)')
-tmux_signal_job=$(OUTPUT_PATH="$stage/tmux-signal-run.json" bun -e 'process.stdout.write(JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text()).result.job_id)')
-run_cli wait "$cli_signal_job" --timeout-ms 5000 --idle-timeout-ms 5000 >"$stage/cli-signal-wait.json" 2>"$stage/cli-signal-wait.stderr"
-run_tmux wait "$tmux_signal_job" --timeout-ms 5000 --idle-timeout-ms 5000 >"$stage/tmux-signal-wait.json" 2>"$stage/tmux-signal-wait.stderr"
-validate_response "$stage/cli-signal-wait.json"
-validate_response "$stage/tmux-signal-wait.json"
-CLI_PATH="$stage/cli-signal-wait.json" TMUX_PATH="$stage/tmux-signal-wait.json" EXPECTED_STATUS="$signal_status" EXPECTED_SIGNAL="$signal_number" bun -e '
+cli_signal_job=$(OUTPUT_PATH="$stage/cli-signal-run.json" bun -e 'process.stdout.write(JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text()).result.observation.job.job_id)')
+tmux_signal_job=$(OUTPUT_PATH="$stage/tmux-signal-run.json" bun -e 'process.stdout.write(JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text()).result.observation.job.job_id)')
+validate_response "$stage/cli-signal-run.json"
+validate_response "$stage/tmux-signal-run.json"
+CLI_PATH="$stage/cli-signal-run.json" TMUX_PATH="$stage/tmux-signal-run.json" EXPECTED_STATUS="$signal_status" EXPECTED_SIGNAL="$signal_number" bun -e '
 const values = await Promise.all([process.env.CLI_PATH, process.env.TMUX_PATH].map(async (path) => JSON.parse(await Bun.file(path).text())))
 for (const response of values) {
   if (response.result.observation.job.status !== process.env.EXPECTED_STATUS) process.exit(1)
@@ -182,8 +174,8 @@ run_tmux remove "$tmux_signal_job" >/dev/null 2>"$stage/tmux-signal-remove.stder
 
 cancel_command=$(fixture_field cancellation command)
 cancel_status=$(fixture_field cancellation expected_status)
-run_cli run --hard-timeout-ms 10000 -- "$cancel_command" >"$stage/cli-cancel-run.json" 2>"$stage/cli-cancel-run.stderr"
-run_tmux run --hard-timeout-ms 10000 -- "$cancel_command" >"$stage/tmux-cancel-run.json" 2>"$stage/tmux-cancel-run.stderr"
+run_cli start --hard-timeout-ms 10000 -- "$cancel_command" >"$stage/cli-cancel-run.json" 2>"$stage/cli-cancel-run.stderr"
+run_tmux start --hard-timeout-ms 10000 -- "$cancel_command" >"$stage/tmux-cancel-run.json" 2>"$stage/tmux-cancel-run.stderr"
 cli_cancel_job=$(OUTPUT_PATH="$stage/cli-cancel-run.json" bun -e 'process.stdout.write(JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text()).result.job_id)')
 tmux_cancel_job=$(OUTPUT_PATH="$stage/tmux-cancel-run.json" bun -e 'process.stdout.write(JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text()).result.job_id)')
 set +e
@@ -222,8 +214,8 @@ run_tmux remove "$tmux_cancel_job" >/dev/null 2>"$stage/tmux-cancel-remove.stder
 timeout_command=$(fixture_field 'hard timeout' command)
 timeout_ms=$(fixture_field 'hard timeout' hard_timeout_ms)
 timeout_status=$(fixture_field 'hard timeout' expected_status)
-run_cli run --hard-timeout-ms "$timeout_ms" -- "$timeout_command" >"$stage/cli-timeout-run.json" 2>"$stage/cli-timeout-run.stderr"
-run_tmux run --hard-timeout-ms "$timeout_ms" -- "$timeout_command" >"$stage/tmux-timeout-run.json" 2>"$stage/tmux-timeout-run.stderr"
+run_cli start --hard-timeout-ms "$timeout_ms" -- "$timeout_command" >"$stage/cli-timeout-run.json" 2>"$stage/cli-timeout-run.stderr"
+run_tmux start --hard-timeout-ms "$timeout_ms" -- "$timeout_command" >"$stage/tmux-timeout-run.json" 2>"$stage/tmux-timeout-run.stderr"
 cli_timeout_job=$(OUTPUT_PATH="$stage/cli-timeout-run.json" bun -e 'process.stdout.write(JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text()).result.job_id)')
 tmux_timeout_job=$(OUTPUT_PATH="$stage/tmux-timeout-run.json" bun -e 'process.stdout.write(JSON.parse(await Bun.file(process.env.OUTPUT_PATH).text()).result.job_id)')
 run_cli wait "$cli_timeout_job" --timeout-ms 20000 --idle-timeout-ms 20000 >"$stage/cli-timeout-wait.json" 2>"$stage/cli-timeout-wait.stderr"

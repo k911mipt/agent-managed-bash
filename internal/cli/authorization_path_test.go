@@ -13,7 +13,7 @@ import (
 func Test_Application_allows_non_owner_read_and_rejects_non_owner_mutation(t *testing.T) {
 	// Given
 	harness := newLifecycleHarness(t)
-	jobID := harness.runJob(t, "sleep 30")
+	jobID := harness.startJob(t, "sleep 30")
 	observer := testClient{application: harness.client.application, workspace: harness.client.workspace, session: "session-2"}
 	observerContext := generated.TrustedContext{
 		SessionID: "session-2", WorkspacePath: harness.client.workspace, Cwd: harness.client.workspace,

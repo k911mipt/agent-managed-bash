@@ -14,7 +14,7 @@ import (
 func Test_Application_failed_wait_stdout_preserves_observer_cursor(t *testing.T) {
 	// Given
 	harness := newLifecycleHarness(t)
-	jobID := harness.runJob(t, "printf repeat")
+	jobID := harness.startJob(t, "printf repeat")
 	timeout := generated.TimeoutMs(5000)
 	idle := generated.TimeoutMs(5000)
 	request := generated.WaitRequest{

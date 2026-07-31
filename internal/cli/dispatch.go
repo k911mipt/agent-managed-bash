@@ -36,6 +36,8 @@ func (application *Application) dispatch(
 	}
 	runtime := runnerDispatch{manager: manager, invocation: invocation}
 	switch value := request.(type) {
+	case startRequest:
+		return application.dispatchStart(ctx, runtime, value)
 	case runRequest:
 		return application.dispatchRun(ctx, runtime, value)
 	case waitRequest:
@@ -65,6 +67,25 @@ func (application *Application) dispatch(
 	}
 }
 
+func (application *Application) dispatchStart(
+	ctx context.Context,
+	runtime runnerDispatch,
+	request startRequest,
+) (dispatchResult, *failure) {
+	metadata, err := runtime.manager.Start(ctx, runner.StartRequest{
+		Invocation: runtime.invocation, Command: request.Payload.Command,
+		HardTimeout: durationFrom(request.Payload.HardTimeoutMs), OutputLimitBytes: intFrom(request.Payload.OutputLimitBytes),
+	})
+	warning, problem := classifyStart(generated.ActionStart, metadata, err)
+	if problem != nil {
+		return dispatchResult{}, problem
+	}
+	return dispatchResult{
+		response: generated.StartResponse{Action: "start", Ok: true, Result: metadata, SchemaVersion: 1},
+		warning:  warning,
+	}, nil
+}
+
 func (application *Application) dispatchRun(
 	ctx context.Context,
 	runtime runnerDispatch,
@@ -74,24 +95,42 @@ func (application *Application) dispatchRun(
 		Invocation: runtime.invocation, Command: request.Payload.Command,
 		HardTimeout: durationFrom(request.Payload.HardTimeoutMs), OutputLimitBytes: intFrom(request.Payload.OutputLimitBytes),
 	})
-	return runResult(metadata, err)
+	warning, problem := classifyStart(generated.ActionRun, metadata, err)
+	if problem != nil {
+		return dispatchResult{}, problem
+	}
+	zero := generated.ByteCursor(0)
+	prepared, err := runtime.manager.PrepareWait(ctx, runner.WaitRequest{
+		Invocation: runtime.invocation, JobID: metadata.JobID, CursorBytes: &zero,
+		Timeout: durationFrom(request.Payload.TimeoutMs), IdleTimeout: durationFrom(request.Payload.IdleTimeoutMs),
+	})
+	if err != nil {
+		return dispatchResult{}, runObservationFailure(metadata, err)
+	}
+	return dispatchResult{
+		response: generated.RunResponse{Action: "run", Ok: true, Result: preparedObservation(prepared), SchemaVersion: 1},
+		warning:  warning, afterWrite: prepared.Commit,
+	}, nil
 }
 
-func runResult(metadata generated.JobMetadata, err error) (dispatchResult, *failure) {
+func classifyStart(action generated.Action, metadata generated.JobMetadata, err error) (error, *failure) {
 	if err == nil {
-		return dispatchResult{response: generated.RunResponse{Action: "run", Ok: true, Result: metadata, SchemaVersion: 1}}, nil
+		return nil, nil
 	}
 	var durabilityError *runner.CommitDurabilityError
 	if errors.As(err, &durabilityError) {
 		if metadata.JobID == "" || metadata.JobID != durabilityError.JobID {
-			return dispatchResult{}, newFailure(generated.ActionRun, newProblem(generated.ErrorCodeInternal, fmt.Errorf("committed job metadata does not match durability error: %w", err)))
+			return nil, newFailure(action, newProblem(generated.ErrorCodeInternal, fmt.Errorf("committed job metadata does not match durability error: %w", err)))
 		}
-		return dispatchResult{
-			response: generated.RunResponse{Action: "run", Ok: true, Result: metadata, SchemaVersion: 1},
-			warning:  err,
-		}, nil
+		return err, nil
 	}
-	return dispatchResult{}, failureFromError(generated.ActionRun, err)
+	return nil, failureFromError(action, err)
+}
+
+func runObservationFailure(metadata generated.JobMetadata, err error) *failure {
+	problem := failureFromError(generated.ActionRun, err)
+	problem.job = &metadata
+	return problem
 }
 
 func (application *Application) dispatchWait(
@@ -107,9 +146,15 @@ func (application *Application) dispatchWait(
 		return dispatchResult{}, failureFromError(request.action(), err)
 	}
 	return dispatchResult{
-		response:   generated.WaitResponse{Action: "wait", Ok: true, Result: prepared.Observation, SchemaVersion: 1},
+		response:   generated.WaitResponse{Action: "wait", Ok: true, Result: preparedObservation(prepared), SchemaVersion: 1},
 		afterWrite: prepared.Commit,
 	}, nil
+}
+
+func preparedObservation(prepared *runner.PreparedWait) generated.ObservationResult {
+	return generated.ObservationResult{
+		Reason: prepared.Reason, Observation: prepared.Observation.Observation, Output: prepared.Observation.Output,
+	}
 }
 
 func operationResult(action generated.Action, response any, err error) (dispatchResult, *failure) {

@@ -32,6 +32,9 @@ func Test_GeneratedModels_required_fields_have_concrete_types(_ *testing.T) {
 		CapturedBytes: 2, Eof: true, NextCursorBytes: 2, StartCursorBytes: 0, Text: "ok",
 	}
 	outputObservation := generated.OutputObservation{Observation: observation, Output: output}
+	observationResult := generated.ObservationResult{
+		Observation: observation, Output: output, Reason: generated.ObservationReasonTerminal,
+	}
 	cancellation := generated.CancellationMetadata{
 		Requested: true, RequestedAtUnixMs: 1002, RequestedBySessionID: "session-1",
 	}
@@ -58,6 +61,10 @@ func Test_GeneratedModels_required_fields_have_concrete_types(_ *testing.T) {
 	requireSessionID(job.OwnerSessionID)
 	requireExitClass(generated.ExitClass(2))
 
+	_ = generated.StartRequest{
+		SchemaVersion: 1, Action: "start", Context: context,
+		Payload: generated.StartPayload{Command: "printf ok"},
+	}
 	_ = generated.RunRequest{
 		SchemaVersion: 1, Action: "run", Context: context,
 		Payload: generated.RunPayload{Command: "printf ok"},
@@ -82,9 +89,10 @@ func Test_GeneratedModels_required_fields_have_concrete_types(_ *testing.T) {
 	_ = generated.ListRequest{SchemaVersion: 1, Action: "list", Context: context}
 	_ = generated.VersionRequest{SchemaVersion: 1, Action: "version"}
 
-	_ = generated.RunResponse{SchemaVersion: 1, Ok: true, Action: "run", Result: job}
+	_ = generated.StartResponse{SchemaVersion: 1, Ok: true, Action: "start", Result: job}
+	_ = generated.RunResponse{SchemaVersion: 1, Ok: true, Action: "run", Result: observationResult}
 	_ = generated.WaitResponse{
-		SchemaVersion: 1, Ok: true, Action: "wait", Result: outputObservation,
+		SchemaVersion: 1, Ok: true, Action: "wait", Result: observationResult,
 	}
 	_ = generated.StatusResponse{
 		SchemaVersion: 1, Ok: true, Action: "status", Result: observation,
@@ -104,7 +112,7 @@ func Test_GeneratedModels_required_fields_have_concrete_types(_ *testing.T) {
 	_ = generated.VersionResponse{
 		SchemaVersion: 1, Ok: true, Action: "version", Result: versionData,
 	}
-	_ = generated.ErrorResponse{SchemaVersion: 1, Ok: false, Error: protocolError}
+	_ = generated.ErrorResponse{SchemaVersion: 1, Ok: false, Error: protocolError, Job: &job}
 	_ = generated.PersistedJobState{
 		SchemaVersion: 1,
 		Session: generated.SessionMetadata{

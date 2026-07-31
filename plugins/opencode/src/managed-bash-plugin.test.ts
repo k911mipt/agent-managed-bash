@@ -203,6 +203,8 @@ function fakeExecutor(calls: Request[]): CliExecutor {
       switch (request.action) {
         case "version":
           return response(versionResponse())
+        case "start":
+          return response(startResponse())
         case "run":
           return response(runResponse())
         case "wait":
@@ -243,18 +245,36 @@ function runResponse(): Extract<Response, { action: "run" }> {
     ok: true,
     action: "run",
     result: {
-      job_id: "job-1",
-      status: "running",
-      owner_session_id: "session-1",
-      workspace_path: "/workspace",
-      cwd: "/workspace/project",
-      command: "printf ok",
-      created_at_unix_ms: 1,
-      started_at_unix_ms: 1,
-      captured_bytes: 0,
-      hard_timeout_ms: 7_200_000,
-      output_limit_bytes: 104_857_600,
+      reason: "output_idle",
+      observation: { job: jobMetadata() },
+      output: {
+        text: "",
+        start_cursor_bytes: 0,
+        next_cursor_bytes: 0,
+        captured_bytes: 0,
+        eof: false,
+      },
     },
+  }
+}
+
+function startResponse(): Extract<Response, { action: "start" }> {
+  return { schema_version: 1, ok: true, action: "start", result: jobMetadata() }
+}
+
+function jobMetadata(): Extract<Response, { action: "start" }>["result"] & { readonly status: "running" } {
+  return {
+    job_id: "job-1",
+    status: "running",
+    owner_session_id: "session-1",
+    workspace_path: "/workspace",
+    cwd: "/workspace/project",
+    command: "printf ok",
+    created_at_unix_ms: 1,
+    started_at_unix_ms: 1,
+    captured_bytes: 0,
+    hard_timeout_ms: 7_200_000,
+    output_limit_bytes: 104_857_600,
   }
 }
 
@@ -264,7 +284,8 @@ function waitResponse(): Response {
     ok: true,
     action: "wait",
     result: {
-      observation: { job: { ...runResponse().result, status: "running" } },
+      reason: "output_idle",
+      observation: { job: jobMetadata() },
       output: {
         text: "",
         start_cursor_bytes: 0,

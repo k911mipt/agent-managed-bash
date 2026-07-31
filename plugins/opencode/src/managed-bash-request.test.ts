@@ -1,6 +1,6 @@
 import type { ToolContext } from "@opencode-ai/plugin"
 import { describe, expect, test } from "bun:test"
-import { trustedContextFor } from "./managed-bash-request"
+import { requestFor, trustedContextFor } from "./managed-bash-request"
 
 describe("trustedContextFor", () => {
   test("uses the OpenCode worktree for a project session", () => {
@@ -26,6 +26,31 @@ describe("trustedContextFor", () => {
       session_id: "session-1",
       workspace_path: "/codenv/arcadia/taxi/backend-py3",
       cwd: "/codenv/arcadia/taxi/backend-py3",
+    })
+  })
+})
+
+describe("requestFor", () => {
+  test("maps start and run to distinct launch contracts", () => {
+    // Given
+    const context = { session_id: "session-1", workspace_path: "/workspace", cwd: "/workspace" }
+
+    // When
+    const start = requestFor({ action: "start", command: "sleep 30" }, context)
+    const run = requestFor({ action: "run", command: "sleep 30", timeout_ms: 500, idle_timeout_ms: 20 }, context)
+
+    // Then
+    expect(start).toEqual({
+      schema_version: 1,
+      action: "start",
+      context,
+      payload: { command: "sleep 30" },
+    })
+    expect(run).toEqual({
+      schema_version: 1,
+      action: "run",
+      context,
+      payload: { command: "sleep 30", timeout_ms: 500, idle_timeout_ms: 20 },
     })
   })
 })
