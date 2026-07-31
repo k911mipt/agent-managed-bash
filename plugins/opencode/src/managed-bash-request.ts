@@ -12,6 +12,17 @@ export function trustedContextFor(context: ToolContext): TrustedContext {
 
 export function requestFor(action: ManagedBashAction, context: TrustedContext): Request {
   switch (action.action) {
+    case "start":
+      return {
+        schema_version: 1,
+        action: "start",
+        context,
+        payload: {
+          command: action.command,
+          ...(action.hard_timeout_ms === undefined ? {} : { hard_timeout_ms: action.hard_timeout_ms }),
+          ...(action.output_limit_bytes === undefined ? {} : { output_limit_bytes: action.output_limit_bytes }),
+        },
+      }
     case "run":
       return {
         schema_version: 1,
@@ -21,6 +32,8 @@ export function requestFor(action: ManagedBashAction, context: TrustedContext): 
           command: action.command,
           ...(action.hard_timeout_ms === undefined ? {} : { hard_timeout_ms: action.hard_timeout_ms }),
           ...(action.output_limit_bytes === undefined ? {} : { output_limit_bytes: action.output_limit_bytes }),
+          ...(action.timeout_ms === undefined ? {} : { timeout_ms: action.timeout_ms }),
+          ...(action.idle_timeout_ms === undefined ? {} : { idle_timeout_ms: action.idle_timeout_ms }),
         },
       }
     case "wait":
