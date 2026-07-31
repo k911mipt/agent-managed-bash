@@ -19,6 +19,7 @@ type failure struct {
 	diagnosticAction generated.Action
 	code             generated.ErrorCode
 	details          *generated.ErrorDetails
+	job              *generated.JobMetadata
 	cause            error
 }
 
@@ -45,6 +46,7 @@ func (application *Application) writeFailure(streams Streams, problem *failure) 
 	response := generated.ErrorResponse{
 		Action:        problem.action,
 		Error:         generated.ProtocolError{Code: problem.code, Message: publicErrorMessage(problem.code), Details: problem.details},
+		Job:           problem.job,
 		Ok:            false,
 		SchemaVersion: 1,
 	}
