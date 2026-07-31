@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { runReleaseCommand } from "./release-publish-command"
@@ -9,6 +9,20 @@ import {
   waitForStoppedProcess,
   waitForTextFile,
 } from "./release-publish-command-fixtures"
+
+test("runs a release command in the requested current directory", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-managed-bash-release-command-cwd-"))
+  const executable = Bun.which("bun")
+  if (executable === null) throw new Error("Bun executable is unavailable")
+
+  try {
+    const result = await runReleaseCommand({ arguments: ["-e", "console.log(process.cwd())"], currentDirectory: root, executable, timeoutMilliseconds: 1_000 })
+
+    expect(result).toEqual({ exitCode: 0, kind: "completed", stderr: "", stdout: `${await realpath(root)}\n` })
+  } finally {
+    await rm(root, { force: true, recursive: true })
+  }
+})
 
 test("reaps a TERM-ignoring pipe-holding descendant when command times out", async () => {
   // Given

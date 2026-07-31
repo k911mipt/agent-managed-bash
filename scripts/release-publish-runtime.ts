@@ -50,10 +50,10 @@ function commandTimeout(): number {
   return value
 }
 
-export async function command(executable: string, arguments_: readonly string[], environment_: Readonly<Record<string, string>> = {}): Promise<ReleaseCommandResult> {
+export async function command(executable: string, arguments_: readonly string[], environment_: Readonly<Record<string, string>> = {}, currentDirectory?: string): Promise<ReleaseCommandResult> {
   const binary = executable === "gh" ? process.env["RELEASE_GH_BIN"] ?? "gh" : executable === "npm" ? process.env["RELEASE_NPM_BIN"] ?? "npm" : executable === "curl" ? process.env["RELEASE_CURL_BIN"] ?? "curl" : executable
   const environment = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[0] !== "NPM_TOKEN" && entry[1] !== undefined))
-  const result = await runReleaseCommand({ arguments: arguments_, environment: { ...environment, ...environment_ }, executable: binary, inheritEnvironment: false, timeoutMilliseconds: commandTimeout() })
+  const result = await runReleaseCommand({ arguments: arguments_, ...currentDirectory === undefined ? {} : { currentDirectory }, environment: { ...environment, ...environment_ }, executable: binary, inheritEnvironment: false, timeoutMilliseconds: commandTimeout() })
   if (result.kind === "timed_out") throw new ReleasePublicationError(`release command timed out: ${executable}`)
   return result
 }

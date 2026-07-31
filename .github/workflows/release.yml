@@ -656,6 +656,7 @@ jobs:
     timeout-minutes: 20
     environment: release
     permissions:
+      attestations: read
       contents: write
     env:
       RELEASE_COMMIT: ${{ github.event_name == 'workflow_dispatch' && needs.recovery.outputs.commit || needs.validate.outputs.commit }}

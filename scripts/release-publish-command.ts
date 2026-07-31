@@ -4,6 +4,7 @@ export type ReleaseCommandResult =
 
 export type ReleaseCommandRequest = {
   readonly arguments: readonly string[]
+  readonly currentDirectory?: string
   readonly environment?: Readonly<Record<string, string>>
   readonly executable: string
   readonly inheritEnvironment?: boolean
@@ -21,8 +22,12 @@ function killGroup(pid: number, signal: "SIGTERM" | "SIGKILL"): void {
 export async function runReleaseCommand(request: ReleaseCommandRequest): Promise<ReleaseCommandResult> {
   const environment = request.inheritEnvironment === false ? request.environment : { ...process.env, ...request.environment }
   const child = environment === undefined
-    ? Bun.spawn([request.executable, ...request.arguments], { detached: true, stderr: "pipe", stdout: "pipe" })
-    : Bun.spawn([request.executable, ...request.arguments], { detached: true, env: environment, stderr: "pipe", stdout: "pipe" })
+    ? request.currentDirectory === undefined
+      ? Bun.spawn([request.executable, ...request.arguments], { detached: true, stderr: "pipe", stdout: "pipe" })
+      : Bun.spawn([request.executable, ...request.arguments], { cwd: request.currentDirectory, detached: true, stderr: "pipe", stdout: "pipe" })
+    : request.currentDirectory === undefined
+      ? Bun.spawn([request.executable, ...request.arguments], { detached: true, env: environment, stderr: "pipe", stdout: "pipe" })
+      : Bun.spawn([request.executable, ...request.arguments], { cwd: request.currentDirectory, detached: true, env: environment, stderr: "pipe", stdout: "pipe" })
   if (typeof child.stderr === "number" || typeof child.stdout === "number" || child.stderr === undefined || child.stdout === undefined) throw new Error("release command output is not piped")
   let timedOut = false
   const term = setTimeout(() => {

@@ -222,7 +222,7 @@ describe("release publication fake CLI surface", () => {
       expect((await runPublication(arguments_, environment)).exitCode).toBe(0)
       expect((await readdir(temporaryDirectory)).filter((name) => name.startsWith("agent-managed-bash-attestation-") || name.startsWith("agent-managed-bash-npm-bundle-")).length).toBe(0)
       const state = JSON.parse(await readFile(fakeStatePath(environment), "utf8"))
-      state.attestationVerifyExitCode = 1
+      state.githubAttestationVerifyExitCode = 1
       await writeFile(fakeStatePath(environment), JSON.stringify(state))
       await addExactAttestations(root, environment)
       expect((await runPublication(["finalize", "--candidate", join(root, "candidate"), "--control", join(root, "control", "CANDIDATE-RECEIPT.json")], environment)).exitCode).not.toBe(0)
