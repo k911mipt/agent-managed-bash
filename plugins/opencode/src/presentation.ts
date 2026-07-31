@@ -1,19 +1,26 @@
 import type { ToolResult } from "@opencode-ai/plugin"
-import type { ErrorDetails, JobObservation, OutputChunk, Response } from "./generated/protocol.gen"
+import type { ErrorDetails, JobObservation, ObservationResult, OutputChunk, Response } from "./generated/protocol.gen"
 
 const responseLineLimit = 200
 const errorDetailValueLimit = 256
+type StructuredToolResult = Exclude<ToolResult, string>
 
 export function formatProtocolResponse(response: Response): ToolResult {
   if (!response.ok) {
-    return formatToolError(response.error.code, response.error.message, response.error.details)
+    const failure = formatToolError(response.error.code, response.error.message, response.error.details)
+    if (response.job === undefined) {
+      return failure
+    }
+    return { ...failure, output: `${failure.output}\njob ${response.job.job_id} remains available` }
   }
 
   switch (response.action) {
-    case "run":
+    case "start":
       return result(`job ${response.result.job_id}: ${response.result.status}`)
+    case "run":
+      return result(formatObservationResult(response.result))
     case "wait":
-      return result(formatOutputObservation(response.result.observation, response.result.output))
+      return result(formatObservationResult(response.result))
     case "status":
       return result(formatObservation(response.result))
     case "output":
@@ -31,7 +38,24 @@ export function formatProtocolResponse(response: Response): ToolResult {
   }
 }
 
-export function formatToolError(code: string, message: string, details?: ErrorDetails): ToolResult {
+function formatObservationResult(observation: ObservationResult): string {
+  return `${formatOutputObservation(observation.observation, observation.output)}\nreturn reason: ${formatObservationReason(observation.reason)}`
+}
+
+function formatObservationReason(reason: ObservationResult["reason"]): string {
+  switch (reason) {
+    case "terminal":
+      return "terminal"
+    case "output_idle":
+      return "output idle checkpoint"
+    case "observation_timeout":
+      return "observation timeout checkpoint"
+    default:
+      return assertNever(reason)
+  }
+}
+
+export function formatToolError(code: string, message: string, details?: ErrorDetails): StructuredToolResult {
   return {
     title: "managed_bash error",
     output: `${code}: ${message}${formatErrorDetails(details)}`,
@@ -62,7 +86,7 @@ function detailEntry(name: string, value: string | undefined): string | undefine
   return `${name}=${bounded}`
 }
 
-function result(output: string): ToolResult {
+function result(output: string): StructuredToolResult {
   return { title: "managed_bash", output }
 }
 
