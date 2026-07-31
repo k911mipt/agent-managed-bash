@@ -9,6 +9,7 @@ const ActionList Action = "list"
 const ActionOutput Action = "output"
 const ActionRemove Action = "remove"
 const ActionRun Action = "run"
+const ActionStart Action = "start"
 const ActionStatus Action = "status"
 const ActionVersion Action = "version"
 const ActionWait Action = "wait"
@@ -112,6 +113,9 @@ type ErrorResponse struct {
 	// Error corresponds to the JSON schema field "error".
 	Error ProtocolError `json:"error"`
 
+	// Job corresponds to the JSON schema field "job".
+	Job *JobMetadata `json:"job,omitempty,omitzero"`
+
 	// Ok corresponds to the JSON schema field "ok".
 	Ok bool `json:"ok"`
 
@@ -213,6 +217,23 @@ type ListResponse struct {
 type ListResult struct {
 	// Jobs corresponds to the JSON schema field "jobs".
 	Jobs []JobMetadata `json:"jobs"`
+}
+
+type ObservationReason string
+
+const ObservationReasonObservationTimeout ObservationReason = "observation_timeout"
+const ObservationReasonOutputIdle ObservationReason = "output_idle"
+const ObservationReasonTerminal ObservationReason = "terminal"
+
+type ObservationResult struct {
+	// Observation corresponds to the JSON schema field "observation".
+	Observation JobObservation `json:"observation"`
+
+	// Output corresponds to the JSON schema field "output".
+	Output OutputChunk `json:"output"`
+
+	// Reason corresponds to the JSON schema field "reason".
+	Reason ObservationReason `json:"reason"`
 }
 
 type ObserverCursor struct {
@@ -389,8 +410,14 @@ type RunPayload struct {
 	// HardTimeoutMs corresponds to the JSON schema field "hard_timeout_ms".
 	HardTimeoutMs *TimeoutMs `json:"hard_timeout_ms,omitempty,omitzero"`
 
+	// IdleTimeoutMs corresponds to the JSON schema field "idle_timeout_ms".
+	IdleTimeoutMs *TimeoutMs `json:"idle_timeout_ms,omitempty,omitzero"`
+
 	// OutputLimitBytes corresponds to the JSON schema field "output_limit_bytes".
 	OutputLimitBytes *int `json:"output_limit_bytes,omitempty,omitzero"`
+
+	// TimeoutMs corresponds to the JSON schema field "timeout_ms".
+	TimeoutMs *TimeoutMs `json:"timeout_ms,omitempty,omitzero"`
 }
 
 type RunRequest struct {
@@ -415,7 +442,7 @@ type RunResponse struct {
 	Ok bool `json:"ok"`
 
 	// Result corresponds to the JSON schema field "result".
-	Result JobMetadata `json:"result"`
+	Result ObservationResult `json:"result"`
 
 	// SchemaVersion corresponds to the JSON schema field "schema_version".
 	SchemaVersion int `json:"schema_version"`
@@ -437,6 +464,45 @@ type SessionMetadata struct {
 
 	// WorkspacePath corresponds to the JSON schema field "workspace_path".
 	WorkspacePath string `json:"workspace_path"`
+}
+
+type StartPayload struct {
+	// Command corresponds to the JSON schema field "command".
+	Command string `json:"command"`
+
+	// HardTimeoutMs corresponds to the JSON schema field "hard_timeout_ms".
+	HardTimeoutMs *TimeoutMs `json:"hard_timeout_ms,omitempty,omitzero"`
+
+	// OutputLimitBytes corresponds to the JSON schema field "output_limit_bytes".
+	OutputLimitBytes *int `json:"output_limit_bytes,omitempty,omitzero"`
+}
+
+type StartRequest struct {
+	// Action corresponds to the JSON schema field "action".
+	Action string `json:"action"`
+
+	// Context corresponds to the JSON schema field "context".
+	Context TrustedContext `json:"context"`
+
+	// Payload corresponds to the JSON schema field "payload".
+	Payload StartPayload `json:"payload"`
+
+	// SchemaVersion corresponds to the JSON schema field "schema_version".
+	SchemaVersion int `json:"schema_version"`
+}
+
+type StartResponse struct {
+	// Action corresponds to the JSON schema field "action".
+	Action string `json:"action"`
+
+	// Ok corresponds to the JSON schema field "ok".
+	Ok bool `json:"ok"`
+
+	// Result corresponds to the JSON schema field "result".
+	Result JobMetadata `json:"result"`
+
+	// SchemaVersion corresponds to the JSON schema field "schema_version".
+	SchemaVersion int `json:"schema_version"`
 }
 
 type StatusRequest struct {
@@ -567,7 +633,7 @@ type WaitResponse struct {
 	Ok bool `json:"ok"`
 
 	// Result corresponds to the JSON schema field "result".
-	Result OutputObservation `json:"result"`
+	Result ObservationResult `json:"result"`
 
 	// SchemaVersion corresponds to the JSON schema field "schema_version".
 	SchemaVersion int `json:"schema_version"`
