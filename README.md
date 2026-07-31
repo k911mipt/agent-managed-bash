@@ -298,7 +298,7 @@ OpenCode can hide its built-in Bash tool while the plugin retains command permis
 | Hard timeout | 2 hours |
 | Captured output limit | 100 MiB |
 
-`hard_timeout_ms` and `output_limit_bytes` configure `run`. `timeout_ms` and `idle_timeout_ms` configure the observational `wait`; neither wait timeout terminates the job.
+`hard_timeout_ms` and `output_limit_bytes` configure both `start` and `run`. `start` returns detached job metadata immediately. `run` starts the job and observes it from cursor zero until it reaches a terminal state, becomes output-idle, or reaches the observation timeout. `timeout_ms` and `idle_timeout_ms` configure observation for `run` and `wait`; neither checkpoint terminates the job.
 
 Protocol v1 has no restart reattachment. Preserved state does not make a
 running job reattachable after the runner or host restarts. The
@@ -403,7 +403,9 @@ Build the binary with:
 make cli-build
 ```
 
-Every action reads one protocol-v1 JSON request from stdin and writes one schema-valid JSON response plus a newline to stdout. Diagnostics use stderr. The public actions are `run`, `wait`, `status`, `output`, `cancel`, `remove`, `list`, and `version`; command text is accepted only inside the `run` request body.
+Every action reads one protocol-v1 JSON request from stdin and writes one schema-valid JSON response plus a newline to stdout. Diagnostics use stderr. The public actions are `start`, `run`, `wait`, `status`, `output`, `cancel`, `remove`, `list`, and `version`; command text is accepted only inside `start` and `run` request bodies.
+
+Use `run` for the common one-call path. Its result contains the observation, output, and one return reason: `terminal`, `output_idle`, or `observation_timeout`. Use `start` only when the caller needs the job ID before observing or controlling the detached job. A recoverable `run` observation failure may include top-level job metadata so the caller can continue with `wait`, `status`, `output`, `cancel`, or `remove`.
 
 Action subcommands fail immediately with usage guidance when stdin is a terminal; pipe or redirect the JSON request instead of invoking `managed-bash list` or another action interactively. Validation responses may include bounded `field`, `reason`, `expected`, and `actual` details, which the OpenCode plugin renders after the stable error code and message.
 
