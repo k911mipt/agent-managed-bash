@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
-import { join } from "node:path"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { join, resolve } from "node:path"
 import { tmpdir } from "node:os"
 import { canonicalizeJSON, isRecord, parseStrictJSON, readJSON, regularBytes } from "./release-candidate-data"
 import type { CandidateControl } from "./release-candidate-control"
@@ -13,7 +13,7 @@ type Candidate = { readonly assets: readonly Asset[]; readonly commit: string; r
 type Subject = { readonly digest: Readonly<Record<string, string>>; readonly name: string }
 export type Statement = { readonly predicate: unknown; readonly predicateType: string; readonly subjects: readonly Subject[] }
 type VerifiedStatement = Statement & { readonly bundleDigest: string }
-type Command = (executable: string, arguments_: readonly string[]) => Promise<{ readonly exitCode: number; readonly stderr: string; readonly stdout: string }>
+type Command = (executable: string, arguments_: readonly string[], environment_?: Readonly<Record<string, string>>, currentDirectory?: string) => Promise<{ readonly exitCode: number; readonly stderr: string; readonly stdout: string }>
 
 function requiredString(value: unknown, field: string): string {
   if (typeof value !== "string" || value.length === 0) throw new Error(`invalid ${field}`)
@@ -37,22 +37,30 @@ function record(value: unknown, field: string): Record<string, unknown> {
   return value
 }
 
-export function statementFromBundle(bundle: unknown): Statement {
+function unverifiedStatementFromBundle(bundle: unknown): Record<string, unknown> {
   const envelope = record(record(bundle, "verified DSSE bundle")["dsseEnvelope"], "DSSE envelope")
   if (requiredString(envelope["payloadType"], "DSSE payload type") !== "application/vnd.in-toto+json" || !Array.isArray(envelope["signatures"]) || envelope["signatures"].length === 0) throw new Error("invalid DSSE envelope")
   const encoded = requiredString(envelope["payload"], "DSSE payload")
   if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) throw new Error("invalid DSSE payload encoding")
   const payload = Buffer.from(encoded, "base64")
   if (payload.toString("base64") !== encoded) throw new Error("non-canonical DSSE payload encoding")
-  const statement = record(parseStrictJSON(new TextDecoder("utf-8", { fatal: true }).decode(payload)), "in-toto statement")
-  if (Object.keys(statement).length !== 4 || requiredString(statement["_type"], "statement type") !== "https://in-toto.io/Statement/v1" || !Array.isArray(statement["subject"])) throw new Error("invalid in-toto statement")
-  const subjects = statement["subject"].map((value) => {
+  return record(parseStrictJSON(new TextDecoder("utf-8", { fatal: true }).decode(payload)), "in-toto statement")
+}
+
+function statementFromRecord(statement: Record<string, unknown>): Statement {
+  const subjectValues = statement["subject"]
+  if (Object.keys(statement).length !== 4 || requiredString(statement["_type"], "statement type") !== "https://in-toto.io/Statement/v1" || !Array.isArray(subjectValues)) throw new Error("invalid in-toto statement")
+  const subjects = subjectValues.map((value) => {
     const subject = record(value, "in-toto subject")
     if (Object.keys(subject).length !== 2) throw new Error("invalid in-toto subject")
     return { digest: exactDigest(subject["digest"], "statement subject digest"), name: requiredString(subject["name"], "statement subject name") }
   })
   if (subjects.length === 0) throw new Error("missing in-toto subjects")
   return { predicate: statement["predicate"], predicateType: requiredString(statement["predicateType"], "statement predicate type"), subjects }
+}
+
+export function statementFromBundle(bundle: unknown): Statement {
+  return statementFromRecord(unverifiedStatementFromBundle(bundle))
 }
 
 function exactSubject(subject: Subject, asset: Asset): boolean {
@@ -87,43 +95,67 @@ export function assertSLSANpmProvenance(statement: Statement, candidate: Candida
   return assertSLSAProvenance(statement, candidate, "https://github.com/actions/runner/github-hosted")
 }
 
-export function assertNpmCertificateVerification(value: unknown, candidate: Candidate, invocation: string): void {
-  if (!Array.isArray(value) || value.length !== 1) throw new Error("invalid npm certificate verification")
-  const verification = record(record(value[0], "npm certificate verification")["verificationResult"], "npm verification result")
-  const certificate = record(record(verification["signature"], "npm verification signature")["certificate"], "npm verification certificate")
+function verificationCertificate(value: unknown, field: string): Record<string, unknown> {
+  if (!Array.isArray(value) || value.length !== 1) throw new Error(`invalid ${field}`)
+  const verification = record(record(value[0], field)["verificationResult"], `${field} result`)
+  return record(record(verification["signature"], `${field} signature`)["certificate"], `${field} certificate`)
+}
+
+function expectedCertificate(candidate: Candidate, invocation: string): Readonly<Record<string, string>> {
   const ref = `refs/tags/${candidate.tag}`
   const signer = `https://github.com/${candidate.repository}/.github/workflows/release.yml@${ref}`
-  const expected = {
+  return {
     buildConfigDigest: candidate.commit, buildConfigURI: signer, buildSignerDigest: candidate.commit, buildSignerURI: signer,
     githubWorkflowRef: ref, githubWorkflowRepository: candidate.repository, githubWorkflowSHA: candidate.commit,
     issuer: "https://token.actions.githubusercontent.com", runInvocationURI: invocation, runnerEnvironment: "github-hosted",
     sourceRepositoryDigest: candidate.commit, sourceRepositoryRef: ref, sourceRepositoryURI: `https://github.com/${candidate.repository}`,
     subjectAlternativeName: signer,
   }
+}
+
+function isCurrentCertificate(value: unknown, candidate: Candidate): boolean {
+  const certificate = verificationCertificate(value, "artifact certificate verification")
+  const invocation = requiredString(certificate["runInvocationURI"], "artifact certificate runInvocationURI")
+  if (!invocation.startsWith(`https://github.com/${candidate.repository}/actions/runs/`)) return false
+  return Object.entries(expectedCertificate(candidate, invocation)).every(([field, expectedValue]) => requiredString(certificate[field], `artifact certificate ${field}`) === expectedValue)
+}
+
+export function assertNpmCertificateVerification(value: unknown, candidate: Candidate, invocation: string): void {
+  const certificate = verificationCertificate(value, "npm certificate verification")
+  const expected = expectedCertificate(candidate, invocation)
   if (Object.entries(expected).some(([field, expectedValue]) => requiredString(certificate[field], `npm certificate ${field}`) !== expectedValue)) throw new Error("npm certificate claims mismatch")
 }
 
 async function verifiedStatements(asset: Asset, candidate: Candidate, command: Command): Promise<readonly VerifiedStatement[]> {
-  const result = await command("gh", ["api", `repos/${candidate.repository}/attestations/sha256:${asset.sha256}`])
-  if (result.exitCode === 1 && result.stderr.trim() === "gh: Not Found (HTTP 404)") return []
-  if (result.exitCode !== 0) throw new Error("attestation enumeration failed")
-  const response = record(parseStrictJSON(result.stdout), "attestation response")
-  if (!Array.isArray(response["attestations"])) throw new Error("invalid attestation response")
   const root = await mkdtemp(join(tmpdir(), "agent-managed-bash-attestation-"))
   try {
+    const artifactPath = resolve(asset.path)
+    const result = await command("gh", ["attestation", "download", artifactPath, "--repo", candidate.repository, "--limit", "1000"], {}, root)
+    const absent = `Failed to download the artifact's bundle(s): failed to fetch attestations: HTTP 404: Not Found (https://api.github.com/repos/${candidate.repository}/attestations/sha256:${asset.sha256}?per_page=100)`
+    if (result.exitCode === 1 && result.stderr.trim() === absent) return []
+    if (result.exitCode !== 0) throw new Error("attestation enumeration failed")
+    const lines = (await readFile(join(root, `sha256:${asset.sha256}.jsonl`), "utf8")).trim().split("\n")
+    if (lines.length >= 1000) throw new Error("attestation enumeration limit reached")
+    const attestations = lines.map((line) => record(parseStrictJSON(line), "attestation bundle"))
     const seen = new Set<string>()
     const statements: VerifiedStatement[] = []
-    for (const [index, value] of response["attestations"].entries()) {
-      const bundle = record(record(value, "attestation")["bundle"], "attestation bundle")
+    for (const [index, bundle] of attestations.entries()) {
+      const unverifiedStatement = unverifiedStatementFromBundle(bundle)
+      const predicateType = requiredString(unverifiedStatement["predicateType"], "statement predicate type")
+      if (predicateType !== provenancePredicateType && predicateType !== sbomPredicateType) continue
+      const path = join(root, `${index}.json`)
+      await writeFile(path, `${canonicalizeJSON(bundle)}\n`)
+      const ref = `refs/tags/${candidate.tag}`
+      const neutral = await command("gh", ["attestation", "verify", artifactPath, "--repo", candidate.repository, "--bundle", path, "--predicate-type", predicateType, "--deny-self-hosted-runners", "--cert-oidc-issuer", "https://token.actions.githubusercontent.com", "--format", "json"])
+      if (neutral.exitCode !== 0) throw new Error("cryptographic attestation verification failed")
+      if (!isCurrentCertificate(parseStrictJSON(neutral.stdout), candidate)) continue
       const bundleDigest = createHash("sha256").update(canonicalizeJSON(bundle)).digest("hex")
       if (seen.has(bundleDigest)) throw new Error("duplicate attestation bundle")
       seen.add(bundleDigest)
-      const path = join(root, `${index}.json`)
-      await writeFile(path, `${canonicalizeJSON(bundle)}\n`)
-      const statement = statementFromBundle(bundle)
-      if (statement.predicateType !== provenancePredicateType && statement.predicateType !== sbomPredicateType) throw new Error("unexpected attestation predicate")
-      const verified = await command("gh", ["attestation", "verify", asset.path, "--repo", candidate.repository, "--bundle", path, "--predicate-type", statement.predicateType])
-      if (verified.exitCode !== 0) throw new Error("cryptographic attestation verification failed")
+      const signer = `https://github.com/${candidate.repository}/.github/workflows/release.yml@${ref}`
+      const exact = await command("gh", ["attestation", "verify", artifactPath, "--repo", candidate.repository, "--bundle", path, "--predicate-type", predicateType, "--cert-identity", signer, "--signer-digest", candidate.commit, "--source-ref", ref, "--source-digest", candidate.commit, "--deny-self-hosted-runners", "--cert-oidc-issuer", "https://token.actions.githubusercontent.com"])
+      if (exact.exitCode !== 0) throw new Error("current attestation policy verification failed")
+      const statement = statementFromRecord(unverifiedStatement)
       if (!statement.subjects.some((subject) => exactSubject(subject, asset))) throw new Error("attestation subject mismatch")
       statements.push({ ...statement, bundleDigest })
     }

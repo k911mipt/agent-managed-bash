@@ -10,6 +10,20 @@ import {
   waitForTextFile,
 } from "./release-publish-command-fixtures"
 
+test("runs a release command in the requested current directory", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-managed-bash-release-command-cwd-"))
+  const executable = Bun.which("bun")
+  if (executable === null) throw new Error("Bun executable is unavailable")
+
+  try {
+    const result = await runReleaseCommand({ arguments: ["-e", "console.log(process.cwd())"], currentDirectory: root, executable, timeoutMilliseconds: 1_000 })
+
+    expect(result).toEqual({ exitCode: 0, kind: "completed", stderr: "", stdout: `${root}\n` })
+  } finally {
+    await rm(root, { force: true, recursive: true })
+  }
+})
+
 test("reaps a TERM-ignoring pipe-holding descendant when command times out", async () => {
   // Given
   const root = await mkdtemp(join(tmpdir(), "agent-managed-bash-release-command-"))

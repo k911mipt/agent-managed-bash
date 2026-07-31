@@ -35,7 +35,7 @@ export async function setupPublication(root: string): Promise<Readonly<Record<st
   await mkdir(bin)
   await writeFile(state, "{}")
   const fake = `#!/usr/bin/env bun
-import { resolve } from "node:path"
+import { join, resolve } from "node:path"
 const [kind, ...arguments_] = Bun.argv.slice(2)
 const statePath = process.env.FAKE_RELEASE_STATE
 const state = JSON.parse(await Bun.file(statePath).text())
@@ -66,11 +66,12 @@ if (kind === "gh") {
   if (arguments_[0] === "release" && arguments_[1] === "create") { const target = arguments_[arguments_.indexOf("--target") + 1]; const paths = arguments_.slice(arguments_.indexOf("--target") + 2).filter((value) => !value.startsWith("--")); state.release = { tagName: arguments_[2], isDraft: true, isImmutable: false, targetCommitish: target, assets: await Promise.all(paths.map(async (path) => ({ name: path.split("/").at(-1), digest: \`sha256:\${new Bun.CryptoHasher("sha256").update(await Bun.file(path).arrayBuffer()).digest("hex")}\` }))) }; state.releaseDelay = state.releaseDelayOnCreate ?? 0; await save(); if (state.ambiguous === "release-create") process.exit(1); process.exit(0) }
   if (arguments_[0] === "release" && arguments_[1] === "upload") { const path = arguments_.at(-1); state.release.assets.push({ name: path.split("/").at(-1), digest: \`sha256:\${new Bun.CryptoHasher("sha256").update(await Bun.file(path).arrayBuffer()).digest("hex")}\` }); await save(); if (state.ambiguous === "release-upload") process.exit(1); process.exit(0) }
   if (arguments_[0] === "release" && arguments_[1] === "edit") { state.release.isDraft = false; state.release.isImmutable = true; await save(); if (state.ambiguous === "release-edit") process.exit(1); process.exit(0) }
-  if (arguments_[0] === "api") { if (state.attestationAPIError !== undefined) { console.error(state.attestationAPIError); process.exit(1) }; const digest = arguments_[1].split("sha256:").at(-1); const attestations = state.attestations?.[digest] ?? []; if (attestations.length === 0) { console.error("gh: Not Found (HTTP 404)"); process.exit(1) }; console.log(JSON.stringify({ attestations })); process.exit(0) }
+  if (arguments_[0] === "attestation" && arguments_[1] === "download") { if (state.attestationAPIError !== undefined) { console.error(state.attestationAPIError); process.exit(1) }; const bytes = await Bun.file(arguments_[2]).arrayBuffer(); const digest = new Bun.CryptoHasher("sha256").update(bytes).digest("hex"); const attestations = state.attestations?.[digest] ?? []; const repository = arguments_[arguments_.indexOf("--repo") + 1]; if (arguments_[arguments_.indexOf("--limit") + 1] !== "1000" || repository !== process.env.RELEASE_REPOSITORY) process.exit(2); if (attestations.length === 0) { console.error(\`Failed to download the artifact's bundle(s): failed to fetch attestations: HTTP 404: Not Found (https://api.github.com/repos/\${repository}/attestations/sha256:\${digest}?per_page=100)\`); process.exit(1) }; await Bun.write(join(process.cwd(), \`sha256:\${digest}.jsonl\`), attestations.map((value) => JSON.stringify(value.bundle)).join("\\n") + "\\n"); process.exit(0) }
   if (arguments_[0] === "attestation" && arguments_[1] === "verify") {
     if (state.requiredPredicateType !== undefined && arguments_[arguments_.indexOf("--predicate-type") + 1] !== state.requiredPredicateType) process.exit(1)
-    if (arguments_.includes("--format")) {
-      const bundleIndex = arguments_.indexOf("--bundle")
+    const bundleIndex = arguments_.indexOf("--bundle")
+    const bundle = bundleIndex < 0 ? undefined : JSON.parse(await Bun.file(arguments_[bundleIndex + 1]).text())
+    if (arguments_.includes("--format") && arguments_.includes("--digest-alg")) {
       if (resolve(arguments_[2]) !== state.npmTarballPath || bundleIndex < 0 || arguments_.lastIndexOf("--bundle") !== bundleIndex || JSON.stringify(JSON.parse(await Bun.file(arguments_[bundleIndex + 1]).text())) !== JSON.stringify(state.npmVerifierBundle ?? state.npmBundle.attestations[0].bundle)) process.exit(1)
       const ref = \`refs/tags/\${process.env.RELEASE_TAG}\`
       const signer = \`https://github.com/\${process.env.RELEASE_REPOSITORY}/.github/workflows/release.yml@\${ref}\`
@@ -79,7 +80,24 @@ if (kind === "gh") {
       const invocation = \`https://github.com/\${process.env.RELEASE_REPOSITORY}/actions/runs/789/attempts/1\`
       const certificate = { buildConfigDigest: process.env.RELEASE_COMMIT, buildConfigURI: signer, buildSignerDigest: process.env.RELEASE_COMMIT, buildSignerURI: signer, githubWorkflowRef: ref, githubWorkflowRepository: process.env.RELEASE_REPOSITORY, githubWorkflowSHA: process.env.RELEASE_COMMIT, issuer: "https://token.actions.githubusercontent.com", runInvocationURI: invocation, runnerEnvironment: "github-hosted", sourceRepositoryDigest: process.env.RELEASE_COMMIT, sourceRepositoryRef: ref, sourceRepositoryURI: \`https://github.com/\${process.env.RELEASE_REPOSITORY}\`, subjectAlternativeName: signer, ...state.npmCertificate }
       console.log(JSON.stringify([{ verificationResult: { signature: { certificate } } }]))
+      process.exit(state.attestationVerifyExitCode ?? 0)
     }
+    if (state.githubAttestationVerifyExitCode !== undefined) process.exit(state.githubAttestationVerifyExitCode)
+    const historical = state.historicalAttestationBundle !== undefined && JSON.stringify(bundle) === JSON.stringify(state.historicalAttestationBundle)
+    const ref = historical ? "refs/tags/v0.1.4" : \`refs/tags/\${process.env.RELEASE_TAG}\`
+    const commit = historical ? "f".repeat(40) : process.env.RELEASE_COMMIT
+    const signer = \`https://github.com/\${process.env.RELEASE_REPOSITORY}/.github/workflows/release.yml@\${ref}\`
+    const invocation = \`https://github.com/\${process.env.RELEASE_REPOSITORY}/actions/runs/789/attempts/1\`
+    const certificate = { buildConfigDigest: commit, buildConfigURI: signer, buildSignerDigest: commit, buildSignerURI: signer, githubWorkflowRef: ref, githubWorkflowRepository: process.env.RELEASE_REPOSITORY, githubWorkflowSHA: commit, issuer: "https://token.actions.githubusercontent.com", runInvocationURI: invocation, runnerEnvironment: "github-hosted", sourceRepositoryDigest: commit, sourceRepositoryRef: ref, sourceRepositoryURI: \`https://github.com/\${process.env.RELEASE_REPOSITORY}\`, subjectAlternativeName: signer, ...state.githubCertificate }
+    if (arguments_.includes("--format")) {
+      const required = { "--cert-oidc-issuer": "https://token.actions.githubusercontent.com", "--format": "json", "--repo": process.env.RELEASE_REPOSITORY }
+      if (!arguments_.includes("--deny-self-hosted-runners") || Object.entries(required).some(([name, value]) => arguments_[arguments_.indexOf(name) + 1] !== value)) process.exit(1)
+      console.log(JSON.stringify([{ verificationResult: { signature: { certificate } } }]))
+      process.exit(0)
+    }
+    if (historical) process.exit(1)
+    const required = { "--cert-identity": signer, "--cert-oidc-issuer": "https://token.actions.githubusercontent.com", "--repo": process.env.RELEASE_REPOSITORY, "--signer-digest": process.env.RELEASE_COMMIT, "--source-digest": process.env.RELEASE_COMMIT, "--source-ref": ref }
+    if (!arguments_.includes("--deny-self-hosted-runners") || Object.entries(required).some(([name, value]) => arguments_[arguments_.indexOf(name) + 1] !== value)) process.exit(1)
     process.exit(state.attestationVerifyExitCode ?? 0)
   }
 }
