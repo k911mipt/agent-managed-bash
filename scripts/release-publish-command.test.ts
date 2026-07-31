@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { runReleaseCommand } from "./release-publish-command"
@@ -18,7 +18,7 @@ test("runs a release command in the requested current directory", async () => {
   try {
     const result = await runReleaseCommand({ arguments: ["-e", "console.log(process.cwd())"], currentDirectory: root, executable, timeoutMilliseconds: 1_000 })
 
-    expect(result).toEqual({ exitCode: 0, kind: "completed", stderr: "", stdout: `${root}\n` })
+    expect(result).toEqual({ exitCode: 0, kind: "completed", stderr: "", stdout: `${await realpath(root)}\n` })
   } finally {
     await rm(root, { force: true, recursive: true })
   }
