@@ -17,7 +17,7 @@ func Test_Application_executes_complete_managed_job_lifecycle(t *testing.T) {
 	run := generated.RunRequest{
 		Action: string(generated.ActionRun), Context: harness.context,
 		Payload: generated.RunPayload{
-			Command: `test -z "${MANAGED_BASH_HOST_SESSION_ID:-}" && test -z "${MANAGED_BASH_HOST_WORKSPACE_PATH:-}" && printf hello`,
+			Command:   `test -z "${MANAGED_BASH_HOST_SESSION_ID:-}" && test -z "${MANAGED_BASH_HOST_WORKSPACE_PATH:-}" && printf hello`,
 			TimeoutMs: &timeout, IdleTimeoutMs: &idle,
 		},
 		SchemaVersion: 1,
@@ -78,7 +78,7 @@ func Test_Application_run_returns_nonzero_as_successful_terminal_observation(t *
 	idle := generated.TimeoutMs(5000)
 	request := generated.RunRequest{
 		Action: "run", Context: harness.context,
-		Payload: generated.RunPayload{Command: "exit 7", TimeoutMs: &timeout, IdleTimeoutMs: &idle},
+		Payload:       generated.RunPayload{Command: "exit 7", TimeoutMs: &timeout, IdleTimeoutMs: &idle},
 		SchemaVersion: 1,
 	}
 
@@ -103,7 +103,7 @@ func Test_Application_run_returns_output_idle_checkpoint_for_silent_job(t *testi
 	idle := generated.TimeoutMs(20)
 	request := generated.RunRequest{
 		Action: "run", Context: harness.context,
-		Payload: generated.RunPayload{Command: "sleep 30", TimeoutMs: &timeout, IdleTimeoutMs: &idle},
+		Payload:       generated.RunPayload{Command: "sleep 30", TimeoutMs: &timeout, IdleTimeoutMs: &idle},
 		SchemaVersion: 1,
 	}
 
