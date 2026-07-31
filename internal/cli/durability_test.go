@@ -9,29 +9,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_runResult_preserves_committed_job_on_durability_uncertainty(t *testing.T) {
+func Test_classifyStart_preserves_committed_job_on_durability_uncertainty(t *testing.T) {
 	// Given
 	metadata := generated.JobMetadata{JobID: "job-1"}
 	durability := &runner.CommitDurabilityError{JobID: metadata.JobID, Cause: runner.ErrCommitDurabilityUnknown}
 
 	// When
-	result, problem := runResult(metadata, durability)
+	warning, problem := classifyStart(generated.ActionRun, metadata, durability)
 
 	// Then
 	require.Nil(t, problem)
-	require.ErrorIs(t, result.warning, runner.ErrCommitDurabilityUnknown)
-	response, ok := result.response.(generated.RunResponse)
-	require.True(t, ok)
-	require.Equal(t, metadata.JobID, response.Result.JobID)
+	require.ErrorIs(t, warning, runner.ErrCommitDurabilityUnknown)
 }
 
-func Test_runResult_rejects_mismatched_durability_metadata(t *testing.T) {
+func Test_classifyStart_rejects_mismatched_durability_metadata(t *testing.T) {
 	// Given
 	metadata := generated.JobMetadata{JobID: "job-1"}
 	durability := &runner.CommitDurabilityError{JobID: "job-2", Cause: errors.New("uncertain")}
 
 	// When
-	_, problem := runResult(metadata, durability)
+	_, problem := classifyStart(generated.ActionRun, metadata, durability)
 
 	// Then
 	require.NotNil(t, problem)
