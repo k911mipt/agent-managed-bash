@@ -1,0 +1,9 @@
+{
+  "schema_version": 1, "ok": true, "action": "start",
+  "result": {
+    "job_id": "job-1", "status": "running", "owner_session_id": "session-1",
+    "workspace_path": "/workspace", "cwd": "/workspace", "command": "printf ok",
+    "created_at_unix_ms": 1000, "started_at_unix_ms": 1001, "captured_bytes": 0,
+    "hard_timeout_ms": 60000, "output_limit_bytes": 104857600
+  }
+}
