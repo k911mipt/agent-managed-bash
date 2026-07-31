@@ -34,9 +34,11 @@ observe_job() {
 		sleep 1
 	done
 	capture_job_snapshot "$job"
+	observation_deadline=$((started * 1000 + timeout))
+	idle_deadline=$((last_change * 1000 + idle_timeout))
 	if [ "$snapshot_status" != running ]; then
 		observation_reason=terminal
-	elif [ $((($(date +%s) - started) * 1000)) -ge "$timeout" ]; then
+	elif [ "$observation_deadline" -le "$idle_deadline" ]; then
 		observation_reason=observation_timeout
 	else
 		observation_reason=output_idle
